@@ -36,12 +36,11 @@ import skimage.draw
 
 # Root directory of the project
 ROOT_DIR = os.path.abspath("../../")
-#ROOT_DIR = os.path.abspath("../")
-
 # Import Mask RCNN
 sys.path.append(ROOT_DIR)  # To find local version of the library
 from mrcnn.config import Config
 from mrcnn import model as modellib, utils
+import utilities as util
 
 # Path to trained weights file
 COCO_WEIGHTS_PATH = os.path.join(ROOT_DIR, "mask_rcnn_coco.h5")
@@ -49,6 +48,12 @@ COCO_WEIGHTS_PATH = os.path.join(ROOT_DIR, "mask_rcnn_coco.h5")
 # Directory to save logs and model checkpoints, if not provided
 # through the command line argument --logs
 DEFAULT_LOGS_DIR = os.path.join(ROOT_DIR, "logs")
+
+### Path to DEXTR
+BASE_DIR = os.path.abspath("../../../")
+
+DEXTR_DIR = os.path.join(BASE_DIR,"DEXTR-PyTorch_p")
+
 
 ############################################################
 #  Configurations
@@ -60,40 +65,72 @@ class BalloonConfig(Config):
     Derives from the base Config class and overrides some values.
     """
     # Give the configuration a recognizable name
-    NAME = "balloon"
+    NAME = "Deep_Lesion"
 
     # We use a GPU with 12GB memory, which can fit two images.
     # Adjust down if you use a smaller GPU.
     IMAGES_PER_GPU = 2
 
     # Number of classes (including background)
-    NUM_CLASSES = 1 + 1  # Background + balloon
+    NUM_CLASSES = 1 + 9  # Background + 9 classes (see below)
 
     # Number of training steps per epoch
     STEPS_PER_EPOCH = 100
 
     # Skip detections with < 90% confidence
     DETECTION_MIN_CONFIDENCE = 0.9
+    IMAGE_RESIZE_MODE = "square"
+    IMAGE_MIN_DIM = 512
+    IMAGE_MAX_DIM = 512
+    
+    LEARNING_RATE = 0.00001
+    LEARNING_MOMENTUM = 0.9
+
+    # Weight decay regularization
+    WEIGHT_DECAY = 0.0001
+    #################################### NEED TO PLAY WITH VALUES
+    # What are best training values here? 
+    # ************  ****** 
+    ### Currently training just a little bit and loss is going to Nan quickly. 
+    
+    ######### OTHER QUESTIONS TO ANSWER:
+    # CAN WE LOAD IN IMAGES THAT DONT HAVE SEGMENTATION as BACKGROUND?
+    
 
 
 ############################################################
 #  Dataset
 ############################################################
 
-class BalloonDataset(utils.Dataset):
+class Deep_Lesion_Dataset(utils.Dataset):
 
-    def load_balloon(self, dataset_dir, subset):
+    def load_deep_lesion(self, dataset_dir, subset): #I don't think we need dataset directory.
         """Load a subset of the Balloon dataset.
         dataset_dir: Root directory of the dataset.
         subset: Subset to load: train or val
         """
         # Add classes. We have only one class to add.
-        self.add_class("balloon", 1, "balloon")
-
+        self.add_class("1", 1, "1") # or bone bone? or bone lesion?
+        self.add_class("2", 2, "2")
+        self.add_class("3", 3, "3")
+        self.add_class("4", 4, "4")
+        self.add_class("5", 5, "5")
+        self.add_class("6", 6, "6")
+        self.add_class("7", 7, "7") #Soft tissue: miscellaneous lesions in the body wall, muscle, skin, fat, limbs, head, and neck
+        self.add_class("8", 8, "8")
+        self.add_class("-1", -1, "-1") #Can i have a negative number here? This is straight from Deep Lesion format. 
+     
+#########################
         # Train or validation dataset?
-        assert subset in ["train", "val"]
+        
+        #assert subset in ["train", "val"]
         #dataset_dir = os.path.join(dataset_dir, subset)
-        dataset_dir = os.path.join(ROOT_DIR,"samples","balloon","balloon","train")
+
+        ###### ---> SAVED under "Image" in data.json, there is variable called "train_val_test" 
+        #which has a int value (0-2 or 1-3) indicating it is training, test or validation. 
+        # NEED TO FIGURE OUT HOW TO USE THIS TO ASSIGN TRAIN, VALIDATION, TEST. 
+##########################
+
 
         # Load annotations
         # VGG Image Annotator (up to version 1.6) saves each image in the form:
@@ -111,46 +148,95 @@ class BalloonDataset(utils.Dataset):
         # }
         # We mostly care about the x and y coordinates of each region
         # Note: In VIA 2.0, regions was changed from a dict to a list.
-        annotations = json.load(open(os.path.join(dataset_dir, "via_region_data.json")))
-        ## dict size 61. 
-        annotations = list(annotations.values())  # don't need the dict keys
+        annotations = json.load(open(os.path.join(DEXTR_DIR, "data.json")))
+        
+        #annotations = list(annotations.values())  # don't need the dict keys
+        annotations_seg = annotations['annotations']
+        
+        #annotations_seg = segmentation[2]
 
         # The VIA tool saves images in the JSON even if they don't have any
         # annotations. Skip unannotated images.
-        annotations = [a for a in annotations if a['regions']]
+        #annotations_seg = [a for a in annotations_seg if a['segmentation']]
 
         # Add images
-        for a in annotations:
-
+        
+        b=0
+        for a in annotations_seg:
+            image_info = annotations['images'][b]
+            win = annotations_seg[b]['Windowing']
+            image_id = annotations['images'][b]['id']
+            image_cat = annotations['categories'][b]['category_id']
+            train_valid_test = annotations['images'][b]['Train_Val_Test']
+            #### Must use index 'b' before here, because after this point it
+            # will point to next image/index/
+            b=b+1
+            
+            
             # Get the x, y coordinaets of points of the polygons that make up
             # the outline of each object instance. These are stores in the
             # shape_attributes (see json format above)
             # The if condition is needed to support VIA versions 1.x and 2.x.
-            if type(a['regions']) is dict:
-                polygons = [r['shape_attributes'] for r in a['regions'].values()]
-            else:
-                polygons = [r['shape_attributes'] for r in a['regions']] 
+            polygons = a['regions']
+            ######## polygons 
+            # needs to be a list of dictionaries for each lesion
+            # so if there is one lesion.
+            # polygons = list of size 1
+            # dict of size 3. 
+            # all_point_x is list of variable size(depends on number of points)
+            # same for y
+            # name is str 'polygon'
+            
+            
+            
             # load_mask() needs the image size to convert polygons to masks.
             # Unfortunately, VIA doesn't include it in JSON, so we must read
             # the image. This is only managable since the dataset is tiny.
-            image_path = os.path.join(dataset_dir, a['filename'])
-            image = skimage.io.imread(image_path)
+            
+            ###### LETS STORE PATH TO IMAGE INTO JSON FILE. 
+            
+            ## --- RERUN. added to images under annotations. current_file_path
+            image_path = image_info['File_path']
+            #image_path = os.path.join(dataset_dir, a['filename'])
+            
+            
+            ################### image format should be: unit8 rgb 
+            #image = skimage.io.imread(image_path)
+            image = util.load_im_with_default_windowing(win,image_path)
+            
+
+            
+            ###############
+            
             height, width = image.shape[:2]
 
-            self.add_image(
-                    ##########
-                "balloon",
-                    ########## Replace with class? like:
+            #### SEE IMAGE_INFO, INFO BELOW: I think it gets this from here
+            #### SEE IMAGE_INFO, INFO BELOW: I think it gets this from here
+            #### SEE IMAGE_INFO, INFO BELOW: I think it gets this from here
+            #### SEE IMAGE_INFO, INFO BELOW: I think it gets this from here
+            #### SEE IMAGE_INFO, INFO BELOW: I think it gets this from here
+ 
+            if subset == 'train' and train_valid_test==1:
+                self.add_image(
+                        ############ Replace balloon with CLASSES ABOVE, take from category. 
+                        image_cat,
+                        ############### Replace balloon with CLASSES ABOVE,take from category.
+                        image_id=image_id,  # id is set above. 
+                        path=image_path,
+                        width=width, height=height,
+                        polygons=polygons)
+
+            if subset == 'val' and train_valid_test==2:
+                self.add_image(
+                        ############ Replace balloon with CLASSES ABOVE, take from category. 
+                        image_cat,
+                        ############### Replace balloon with CLASSES ABOVE,take from category.
+                        image_id=image_id,  # id is set above. 
+                        path=image_path,
+                        width=width, height=height,
+                        polygons=polygons)             
                 
-                image_id=a['filename'],  # use file name as a unique image id
-                path=image_path,
-                width=width, height=height,
-                polygons=polygons)
-            
-########### WHAT INFO NEEDS TO BE IN image_id???????            
-            
-            
-            
+                
 
     def load_mask(self, image_id):
         """Generate instance masks for an image.
@@ -161,21 +247,39 @@ class BalloonDataset(utils.Dataset):
         """
         # If not a balloon dataset image, delegate to parent class.
         image_info = self.image_info[image_id]
-        if image_info["source"] != "balloon":
-            return super(self.__class__, self).load_mask(image_id)
+        
+        
+        
+        ###########
+        ##########
+        ######## We want to evaluate every image. We could re-write this to include "1-10,-1" for categoies. 
+        #if image_info["source"] != "balloon":
+        #    return super(self.__class__, self).load_mask(image_id)
+##################
+        #############
 
         # Convert polygons to a bitmap mask of shape
         # [height, width, instance_count]
         info = self.image_info[image_id]
         mask = np.zeros([info["height"], info["width"], len(info["polygons"])],
                         dtype=np.uint8)
-        print('info["polygons"]')
-        print(info["polygons"])
+
         for i, p in enumerate(info["polygons"]):
-            print('p')
-            print(p)
-            print(type(p))
             # Get indexes of pixels inside the polygon and set them to 1
+
+            ####
+            ### p needs to be a dictionary that contains three things: 
+            #polygon/name(str), all_points_x(list), all_points_y(list)
+            ### my all_points_x seems to be a list within a list? not sure. 
+            ###
+            
+            #### MY all_points are lists of floats. We need them to be lists of int
+            p['all_points_y'] = [int(i) for i in p['all_points_y']]
+            p['all_points_x'] = [int(i) for i in p['all_points_x']]
+            #############
+            ################
+            #####################
+            
             rr, cc = skimage.draw.polygon(p['all_points_y'], p['all_points_x'])
             mask[rr, cc, i] = 1
 
@@ -186,22 +290,49 @@ class BalloonDataset(utils.Dataset):
     def image_reference(self, image_id):
         """Return the path of the image."""
         info = self.image_info[image_id]
-        if info["source"] == "balloon":
-            return info["path"]
-        else:
-            super(self.__class__, self).image_reference(image_id)
+        
+        #################### NEED TO SET THIS equal to something else. or jsut return all. 
+        
+        return info["path"]
+        
+        #if info["source"] == "balloon":
+        #    return info["path"]
+        #else:
+        #    super(self.__class__, self).image_reference(image_id)
 
+         ################## Not sure about this... 
 
 def train(model):
     """Train the model."""
     # Training dataset.
-    dataset_train = BalloonDataset()
-    dataset_train.load_balloon(args.dataset, "train")
+    dataset_train = Deep_Lesion_Dataset()
+    
+    ############################## We need to separate the training and validation
+    ### There is a variable in the dict, which is training_val_testing
+    ### It's in image_info file, 
+    # under annotations, image
+    #annotations['images'][0]['Train_Val_Test']
+    
+    ### TRAIN = 1
+    ### VALIDATION = 2
+    ### TEST = 3
+    
+    ###### NEED TO EXRACT THREE DIFFERENT DATASETS based on this. 
+    ## look at how "train"/"valid" is fed in below
+    
+    
+    dataset_train.load_deep_lesion(args.dataset, "train")
+    
+    
     dataset_train.prepare()
 
     # Validation dataset
-    dataset_val = BalloonDataset()
-    dataset_val.load_balloon(args.dataset, "val")
+    dataset_val = Deep_Lesion_Dataset()
+    
+    dataset_val.load_deep_lesion(args.dataset, "val")
+    
+    
+    
     dataset_val.prepare()
 
     # *** This training schedule is an example. Update to your needs ***
