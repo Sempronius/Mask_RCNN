@@ -1,3 +1,6 @@
+epoch = 30
+layers = 'all' #'all'  or 'heads'
+
 """
 Mask R-CNN
 Train on the toy Balloon dataset and implement color splash effect.
@@ -12,19 +15,19 @@ Usage: import the module (see Jupyter notebooks for examples), or run from
        the command line as such:
 
     # Train a new model starting from pre-trained COCO weights
-    python3 balloon.py train --dataset=/path/to/balloon/dataset --weights=coco
+    python3 deep_lesion.py train --dataset=/path/to/balloon/dataset --weights=coco
 
     # Resume training a model that you had trained earlier
-    python3 balloon.py train --dataset=/path/to/balloon/dataset --weights=last
+    python3 deep_lesion.py train --dataset=/path/to/balloon/dataset --weights=last
 
     # Train a new model starting from ImageNet weights
-    python3 balloon.py train --dataset=/path/to/balloon/dataset --weights=imagenet
+    python3 deep_lesion.py train --dataset=/path/to/balloon/dataset --weights=imagenet
 
     # Apply color splash to an image
-    python3 balloon.py splash --weights=/path/to/weights/file.h5 --image=<URL or path to file>
+    python3 deep_lesion.py splash --weights=/path/to/weights/file.h5 --image=<URL or path to file>
 
     # Apply color splash to video using the last weights you trained
-    python3 balloon.py splash --weights=last --video=<URL or path to file>
+    python3 deep_lesion.py splash --weights=last --video=<URL or path to file>
 """
 
 import os
@@ -66,35 +69,37 @@ class BalloonConfig(Config):
     """
     # Give the configuration a recognizable name
     NAME = "Deep_Lesion"
-
     # We use a GPU with 12GB memory, which can fit two images.
     # Adjust down if you use a smaller GPU.
-    IMAGES_PER_GPU = 2
-
+    IMAGES_PER_GPU = 1 #seems highest is 512 otherwise memory problems. 
+    GPU_COUNT = 1
+    BATCH_SIZE = IMAGES_PER_GPU*GPU_COUNT
+    #According to the Keras documentation recommendation:
+#STEPS_PER_EPOCH = NUMBER_OF_SAMPLES/BATCH_SIZE
+#According to the MaskRCNN code:
+#BATCH_SIZE = IMAGES_PER_GPU*GPU_COUNT
+#That means that:
+#STEPS_PER_EPOCH = NUMBER_OF_SAMPLES/(IMAGES_PER_GPU*GPU_COUNT)
+    VALIDATION_STEPS = 250/BATCH_SIZE 
+    STEPS_PER_EPOCH = 1000/BATCH_SIZE 
     # Number of classes (including background)
     NUM_CLASSES = 1 + 9  # Background + 9 classes (see below)
-
     # Number of training steps per epoch
-    STEPS_PER_EPOCH = 100
-
     # Skip detections with < 90% confidence
     DETECTION_MIN_CONFIDENCE = 0.9
     IMAGE_RESIZE_MODE = "square"
     IMAGE_MIN_DIM = 512
     IMAGE_MAX_DIM = 512
     
-    LEARNING_RATE = 0.00001
+    LEARNING_RATE = 0.001
     LEARNING_MOMENTUM = 0.9
+    
 
     # Weight decay regularization
-    WEIGHT_DECAY = 0.0001
-    #################################### NEED TO PLAY WITH VALUES
-    # What are best training values here? 
-    # ************  ****** 
-    ### Currently training just a little bit and loss is going to Nan quickly. 
-    
-    ######### OTHER QUESTIONS TO ANSWER:
-    # CAN WE LOAD IN IMAGES THAT DONT HAVE SEGMENTATION as BACKGROUND?
+    WEIGHT_DECAY = 0.001
+
+    USE_MINI_MASK = False
+
     
 
 
@@ -118,7 +123,7 @@ class Deep_Lesion_Dataset(utils.Dataset):
         self.add_class("6", 6, "6")
         self.add_class("7", 7, "7") #Soft tissue: miscellaneous lesions in the body wall, muscle, skin, fat, limbs, head, and neck
         self.add_class("8", 8, "8")
-        self.add_class("-1", -1, "-1") #Can i have a negative number here? This is straight from Deep Lesion format. 
+        self.add_class("-1", 9, "-1") #Can i have a negative number here? This is straight from Deep Lesion format. 
      
 #########################
         # Train or validation dataset?
@@ -196,10 +201,11 @@ class Deep_Lesion_Dataset(utils.Dataset):
             ###### LETS STORE PATH TO IMAGE INTO JSON FILE. 
             
             ## --- RERUN. added to images under annotations. current_file_path
-            image_path = image_info['File_path']
+            #image_path = image_info['File_path']
             #image_path = os.path.join(dataset_dir, a['filename'])
+            image_path = os.path.join(DEXTR_DIR,image_info['File_path'])
             
-            
+   
             ################### image format should be: unit8 rgb 
             #image = skimage.io.imread(image_path)
             image = util.load_im_with_default_windowing(win,image_path)
@@ -342,9 +348,10 @@ def train(model):
     print("Training network heads")
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
-                epochs=30,
-                layers='heads')
-
+                #epochs=30,
+                #layers='heads')
+                epochs=epoch,
+                layers=layers)
 
 def color_splash(image, mask):
     """Apply color splash effect.

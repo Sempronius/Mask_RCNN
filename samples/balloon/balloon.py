@@ -64,7 +64,12 @@ class BalloonConfig(Config):
 
     # We use a GPU with 12GB memory, which can fit two images.
     # Adjust down if you use a smaller GPU.
-    IMAGES_PER_GPU = 2
+    IMAGES_PER_GPU = 1
+    
+    ######################## ADDED THIS , default was 800, 1024. But this was crashing the system. 
+    IMAGE_RESIZE_MODE = "square"
+    IMAGE_MIN_DIM = 512
+    IMAGE_MAX_DIM = 512
 
     # Number of classes (including background)
     NUM_CLASSES = 1 + 1  # Background + balloon
@@ -169,12 +174,8 @@ class BalloonDataset(utils.Dataset):
         info = self.image_info[image_id]
         mask = np.zeros([info["height"], info["width"], len(info["polygons"])],
                         dtype=np.uint8)
-        print('info["polygons"]')
-        print(info["polygons"])
+
         for i, p in enumerate(info["polygons"]):
-            print('p')
-            print(p)
-            print(type(p))
             # Get indexes of pixels inside the polygon and set them to 1
             rr, cc = skimage.draw.polygon(p['all_points_y'], p['all_points_x'])
             mask[rr, cc, i] = 1
