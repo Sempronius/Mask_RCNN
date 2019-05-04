@@ -1,5 +1,5 @@
-epoch = 30
-layers = 'all' #'all'  or 'heads'
+epoch = 100
+layers = 'heads' #'all'  or 'heads'
 
 """
 Mask R-CNN
@@ -13,7 +13,8 @@ Written by Waleed Abdulla
 
 Usage: import the module (see Jupyter notebooks for examples), or run from
        the command line as such:
-
+    
+     
     # Train a new model starting from pre-trained COCO weights
     python3 deep_lesion.py train --dataset=/path/to/balloon/dataset --weights=coco
 
@@ -29,7 +30,7 @@ Usage: import the module (see Jupyter notebooks for examples), or run from
     # Apply color splash to video using the last weights you trained
     python3 deep_lesion.py splash --weights=last --video=<URL or path to file>
 """
-
+from random import randint
 import os
 import sys
 import json
@@ -217,7 +218,7 @@ class Deep_Lesion_Dataset(utils.Dataset):
             height, width = image.shape[:2]
 
             #### SEE IMAGE_INFO, INFO BELOW: I think it gets this from here
-            #### SEE IMAGE_INFO, INFO BELOW: I think it gets this from here
+            #### SEE IMAGE_INFO, INFOb = randint(0,len(annotations_seg)) BELOW: I think it gets this from here
             #### SEE IMAGE_INFO, INFO BELOW: I think it gets this from here
             #### SEE IMAGE_INFO, INFO BELOW: I think it gets this from here
             #### SEE IMAGE_INFO, INFO BELOW: I think it gets this from here
@@ -376,12 +377,41 @@ def color_splash(image, mask):
 def detect_and_color_splash(model, image_path=None, video_path=None):
     assert image_path or video_path
 
+  ############################
+  ########   ******************!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  ########### NEED TO MAKE SURE IT IS A TEST IMAGE (see above, 3)
+  ##########    ******************!!!!!!!!!!!!!!!!!!!!!!!
+    #################################
+    ######## LOAD RANDOM IMAGE
+    annotations = json.load(open(os.path.join(DEXTR_DIR, "data.json")))
+    annotations_seg = annotations['annotations']
+    b = randint(0,len(annotations_seg))
+    image_info = annotations['images'][b]
+
     # Image or video?
     if image_path:
         # Run model detection and generate the color splash effect
-        print("Running on {}".format(args.image))
+        print("Running on:")
+        print(image_info['File_name'])
+        print(image_info['File_path'])
+
+        
+        image_path = os.path.join(DEXTR_DIR,image_info['File_path'])
+            
+        win = image_info['DICOM_windows']
+        win = win.split(",") # turn it into a list. 
+        
+        win = list(map(float, win)) # turn the list of str, into a list of float (in case of decimals)
+        win = list(map(int, win)) # turn the list of str, into a list of int
+        
+        
+        ################### image format should be: unit8 rgb 
+        #image = skimage.io.imread(image_path)
+        image = util.load_im_with_default_windowing(win,image_path)
+        
         # Read image
-        image = skimage.io.imread(args.image)
+        #image = skimage.io.imread(args.image)
+        
         # Detect objects
         r = model.detect([image], verbose=1)[0]
         # Color splash
