@@ -24,6 +24,8 @@ import json
 import datetime
 import numpy as np
 import skimage.draw
+import numpy
+from PIL import Image, ImageDraw
 
 # Root directory of the project
 ROOT_DIR = os.path.abspath("../../")
@@ -108,8 +110,16 @@ model.load_weights(WEIGHT_DIR, by_name=True, exclude=[
     
 annotations = json.load(open(os.path.join(DEXTR_DIR, "data.json")))
 annotations_seg = annotations['annotations']
+
+################ Create a loop to go through all the test images.
+#
+#for x in range(0,len(annotations['images'])):
+#    train_valid_test = annotations['images'][x]['Train_Val_Test']
+#    if train_valid_test == 3:
+        
 b = randint(0,len(annotations_seg))
 image_info = annotations['images'][b]
+#train_valid_test = annotations['images'][b]['Train_Val_Test']
 
 print("Running on:")
 print(image_info['File_name'])
@@ -134,6 +144,11 @@ import matplotlib.image as mpimg
 
 r = model.detect([image], verbose=1)[0]
 
+############################################################################### 
+################# Need to deal with situation of MULTIPLE DETECTIONS. if r['masks'] = 2 or more. 
+
+
+
 mask = r['masks']
 mask1 = mask*255
 red = mask*0
@@ -142,35 +157,52 @@ red = red[...,0]
 mask1 = mask1[...,0]
 mask2 = np.stack([mask1,red,red],axis=2)
 
-plt.cla()   # Clear axis
-plt.clf()   # Clear figure
-plt.close() # Close a figure window
-#plt.imshow(mask2)
 
-#plt.imshow(image)
 
+#1864
+
+########################## This crashes my computer:
 ########## CREATE a plot of 3 images, original, labeled, and mask. 
+
 fig, ax = plt.subplots(1,3,figsize=(75, 25))
 plt.set_cmap('gray')
+
 ########## moved out of the loop
 plt.ioff() ### TURN OFF INTERACTIVE MODE.   
-
-masked_img = np.where(mask[...,None]==0, image,[0,0,255])
-ax[0].imshow(masked_img) # original
+mask_stack = np.stack([mask[...,0]==0,mask[...,0]==0,mask[...,0]==0],axis=2)
+masked_img = np.where(mask_stack, image,[0,0,255])
+masked_img = masked_img.astype(np.uint8)
+ax[0].imshow(image) # original
 ax[0].axis('off')
-ax[1].imshow(mask2)# Labeled
+
+
+##################################### Ground truth.
+polygon = annotations_seg[b]['segmentation']
+
+img = Image.new('L', (512, 512), 0)
+ImageDraw.Draw(img).polygon(polygon[0], outline=1, fill=1)
+mask_original = numpy.array(img)
+
+mask_original_stack = np.stack([mask_original==0,mask_original==0,mask_original==0],axis=2)
+
+masked_original_img = np.where(mask_original_stack, image,[0,0,255])
+masked_original_img = masked_original_img.astype(np.uint8)
+################################# WILL RUN INTO TROUBLE WITH MULTIPLE MASK (polygon being a list greater than one.)
+
+ax[1].imshow(masked_original_img)# Labeled
 ax[1].axis('off')
+###################################### Need to make ground truth image.
 
 ####
-ax[2].imshow(image) #mask
+ax[2].imshow(masked_img) #mask
 ax[2].axis('off')
 ####
 
 
 
 
-#plt.savefig(dir_comb,bbox_inches='tight')    
-#print('Saving File')
+plt.savefig(image_info['File_name'],bbox_inches='tight')    
+print('Saving File')
 
 
 def color_splash(image, mask):
