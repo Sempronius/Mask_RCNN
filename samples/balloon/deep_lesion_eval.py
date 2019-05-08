@@ -84,7 +84,7 @@ class BalloonConfig(Config):
 
     # Skip detections with < 90% confidence
 
-    DETECTION_MAX_INSTANCES = 1
+    DETECTION_MAX_INSTANCES = 10
     DETECTION_MIN_CONFIDENCE = 0.5
     DETECTION_NMS_THRESHOLD = 0.3
 
@@ -150,13 +150,15 @@ r = model.detect([image], verbose=1)[0]
 
 
 mask = r['masks']
-mask1 = mask*255
-red = mask*0
-red = red.astype(np.uint8)
-red = red[...,0]
-mask1 = mask1[...,0]
-mask2 = np.stack([mask1,red,red],axis=2)
+print(r['masks'].shape)
 
+
+############################################## Allows multiple detections...
+if mask.shape[-1] > 0:
+    # We're treating all instances as one, so collapse the mask into one layer
+
+    mask = (np.sum(mask, -1, keepdims=True) >= 1)
+#############################################
 
 
 #1864
@@ -169,6 +171,7 @@ plt.set_cmap('gray')
 
 ########## moved out of the loop
 plt.ioff() ### TURN OFF INTERACTIVE MODE.   
+
 mask_stack = np.stack([mask[...,0]==0,mask[...,0]==0,mask[...,0]==0],axis=2)
 masked_img = np.where(mask_stack, image,[0,0,255])
 masked_img = masked_img.astype(np.uint8)

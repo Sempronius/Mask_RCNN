@@ -1,5 +1,5 @@
 epoch = 100
-layers = 'heads' #'all'  or 'heads'
+layers = 'all' #'all'  or 'heads' # PREVIOUSLY JUST DID HEADS
 
 """
 Mask R-CNN
@@ -37,7 +37,7 @@ import json
 import datetime
 import numpy as np
 import skimage.draw
-
+import glob
 # Root directory of the project
 ROOT_DIR = os.path.abspath("../../")
 # Import Mask RCNN
@@ -45,6 +45,10 @@ sys.path.append(ROOT_DIR)  # To find local version of the library
 from mrcnn.config import Config
 from mrcnn import model as modellib, utils
 import utilities as util
+
+import pickle
+
+
 
 # Path to trained weights file
 COCO_WEIGHTS_PATH = os.path.join(ROOT_DIR, "mask_rcnn_coco.h5")
@@ -57,7 +61,8 @@ DEFAULT_LOGS_DIR = os.path.join(ROOT_DIR, "logs")
 BASE_DIR = os.path.abspath("../../../")
 
 DEXTR_DIR = os.path.join(BASE_DIR,"DEXTR-PyTorch_p")
-
+with open (os.path.join(DEXTR_DIR,'outfile_bg'), 'rb') as fp:
+    files_bg = pickle.load(fp)
 
 ############################################################
 #  Configurations
@@ -165,7 +170,8 @@ class Deep_Lesion_Dataset(utils.Dataset):
         # annotations. Skip unannotated images.
         #annotations_seg = [a for a in annotations_seg if a['segmentation']]
 
-        # Add images
+        ##################### When loading background, unlabled images, we need to put blank equivalent blank labels.  
+        polygons_blank = [{"all_points_x": [],"all_points_y": [],"name": 'polygon'}]
         
         b=0
         for a in annotations_seg:
@@ -206,7 +212,34 @@ class Deep_Lesion_Dataset(utils.Dataset):
             #image_path = os.path.join(dataset_dir, a['filename'])
             image_path = os.path.join(DEXTR_DIR,image_info['File_path'])
             
-   
+            
+            #***************************************************************
+            ########################################################### use this to import all png files in this directory and load them as blanks. NaN for segmentation. 
+            directory_path = os.path.dirname(image_path)
+            image_path_additional = []
+            for text in files_bg:
+                if directory_path in text:
+                    
+                    image_path_additional.append(text)
+            #############################################################
+            #********************************************************************
+            
+            
+            # use files_bg to add in non-segmentated images to the dataset. 
+            ##
+            #
+            #
+            # polygons = [] ? or polygons = NaN?
+            # Need to figure out what format will work so it will train on these background images and not throw an error. 
+            #
+            #
+            ##
+            
+            
+
+    
+    
+    
             ################### image format should be: unit8 rgb 
             #image = skimage.io.imread(image_path)
             image = util.load_im_with_default_windowing(win,image_path)
@@ -232,6 +265,21 @@ class Deep_Lesion_Dataset(utils.Dataset):
                         path=image_path,
                         width=width, height=height,
                         polygons=polygons)
+                for example_path in image_path_additional:
+                    dirn = os.path.basename(os.path.dirname(image_path_additional[0]))
+                    dirn1 = os.path.basename(os.path.dirname(os.path.dirname(example_path)))
+                    dirn2 = os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(example_path))))
+                    filen = os.path.basename(image_path_additional[0])
+                    image_id_new = dirn2 + dirn1 + dirn + filen
+                    self.add_image(
+                        ############ Replace balloon with CLASSES ABOVE, take from category. 
+                        image_cat, #same as above. same as key slice. 
+                        ############### Replace balloon with CLASSES ABOVE,take from category.
+                        image_id=image_id_new,  # id is set above. 
+                        path=example_path,
+                        width=width, height=height,
+                        polygons=polygons_blank)
+                
 
             if subset == 'val' and train_valid_test==2:
                 self.add_image(
@@ -241,7 +289,21 @@ class Deep_Lesion_Dataset(utils.Dataset):
                         image_id=image_id,  # id is set above. 
                         path=image_path,
                         width=width, height=height,
-                        polygons=polygons)             
+                        polygons=polygons)
+                for example_path in image_path_additional:
+                    dirn = os.path.basename(os.path.dirname(image_path_additional[0]))
+                    dirn1 = os.path.basename(os.path.dirname(os.path.dirname(example_path)))
+                    dirn2 = os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(example_path))))
+                    filen = os.path.basename(image_path_additional[0])
+                    image_id_new = dirn2 + dirn1 + dirn + filen
+                    self.add_image(
+                        ############ Replace balloon with CLASSES ABOVE, take from category. 
+                        image_cat, #same as above. same as key slice. 
+                        ############### Replace balloon with CLASSES ABOVE,take from category.
+                        image_id=image_id_new,  # id is set above. 
+                        path=example_path,
+                        width=width, height=height,
+                        polygons=polygons_blank)
                 
                 
 
@@ -268,27 +330,32 @@ class Deep_Lesion_Dataset(utils.Dataset):
         # Convert polygons to a bitmap mask of shape
         # [height, width, instance_count]
         info = self.image_info[image_id]
-        mask = np.zeros([info["height"], info["width"], len(info["polygons"])],
+        annotations = info["polygons"]
+        count = len(annotations[0]['all_points_x'])
+        if count == 0:
+            mask = np.zeros((info["height"], info["width"], 1), dtype=np.uint8)
+            #class_ids = np.zeros((1,), dtype=np.int32)            
+        else:
+            mask = np.zeros([info["height"], info["width"], len(info["polygons"])],
                         dtype=np.uint8)
+            for i, p in enumerate(info["polygons"]):
+                # Get indexes of pixels inside the polygon and set them to 1
 
-        for i, p in enumerate(info["polygons"]):
-            # Get indexes of pixels inside the polygon and set them to 1
-
-            ####
-            ### p needs to be a dictionary that contains three things: 
-            #polygon/name(str), all_points_x(list), all_points_y(list)
-            ### my all_points_x seems to be a list within a list? not sure. 
-            ###
+                ####
+                ### p needs to be a dictionary that contains three things: 
+                #polygon/name(str), all_points_x(list), all_points_y(list)
+                ### my all_points_x seems to be a list within a list? not sure. 
+                ###
             
-            #### MY all_points are lists of floats. We need them to be lists of int
-            p['all_points_y'] = [int(i) for i in p['all_points_y']]
-            p['all_points_x'] = [int(i) for i in p['all_points_x']]
-            #############
-            ################
-            #####################
+                #### MY all_points are lists of floats. We need them to be lists of int
+                p['all_points_y'] = [int(i) for i in p['all_points_y']]
+                p['all_points_x'] = [int(i) for i in p['all_points_x']]
+                #############
+                ################
+                #####################
             
-            rr, cc = skimage.draw.polygon(p['all_points_y'], p['all_points_x'])
-            mask[rr, cc, i] = 1
+                rr, cc = skimage.draw.polygon(p['all_points_y'], p['all_points_x'])
+                mask[rr, cc, i] = 1
 
         # Return mask, and array of class IDs of each instance. Since we have
         # one class ID only, we return an array of 1s
