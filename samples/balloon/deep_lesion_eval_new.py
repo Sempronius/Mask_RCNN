@@ -1,33 +1,74 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Tue Apr 30 20:48:41 2019
+Created on Tue Jun  4 18:32:13 2019
 
 @author: sempronius
 """
+
+#https://github.com/CrookedNoob/Mask_RCNN-Multi-Class-Detection/blob/master/inspect_food_model.ipynb
+# Create new deep_lesion_eval based off of this:
+
 import os
 import sys
-import json
 import random
+import math
+import re
+import time
 import numpy as np
-import skimage.draw
+import tensorflow as tf
+import matplotlib
 import matplotlib.pyplot as plt
-from pycocotools.coco import COCO
-from pycocotools.coco import maskUtils
+import matplotlib.patches as patches
 
 # Root directory of the project
 ROOT_DIR = os.path.abspath("../../")
 
 # Import Mask RCNN
 sys.path.append(ROOT_DIR)  # To find local version of the library
-
-from mrcnn.config import Config
-from mrcnn import utils_DL
-
+from mrcnn import utils
 from mrcnn import visualize
-
+from mrcnn.visualize import display_images
+import mrcnn.model as modellib
 from mrcnn.model import log
+
+
+# Directory to save logs and trained model
+MODEL_DIR = os.path.join(ROOT_DIR, "logs")
+
+
+MODEL_DIR = '/home/sempronius/deep_learning/Mask_RCNN/logs/'
+#NEED TO SET WEIGHT DIRECTORY
+
+#WEIGHT_DIR = '/home/sempronius/deep_learning/Mask_RCNN/logs/balloon20190428T1350/mask_rcnn_balloon_0030.h5'
+
+
+#################
+#WEIGHT_DIR = '/home/sempronius/deep_learning/Mask_RCNN/logs/deep_lesion20190508T0729/mask_rcnn_deep_lesion_0100.h5'
+WEIGHT_DIR = '/home/sempronius/deep_learning/Mask_RCNN/logs/deep_lesion20190605T0954/mask_rcnn_deep_lesion_0020.h5'
+###############
+
+########################################## NEED TO CHAnge DEPENDING ON HOW YOU TRAINED
+image_size = 512
+
+from random import randint
+import os
+import sys
+import json
+import datetime
+import numpy as np
+import skimage.draw
+import numpy
+from PIL import Image, ImageDraw
 import cv2
+
+# Root directory of the project
+ROOT_DIR = os.path.abspath("../../")
+# Import Mask RCNN
+sys.path.append(ROOT_DIR)  # To find local version of the library
+from mrcnn.config import Config
+from mrcnn import model as modellib, utils_DL
+import utilities as util
 
 # Path to trained weights file
 COCO_WEIGHTS_PATH = os.path.join(ROOT_DIR, "mask_rcnn_coco.h5")
@@ -41,12 +82,13 @@ BASE_DIR = os.path.abspath("../../../")
 
 DEXTR_DIR = os.path.join(BASE_DIR,"DEXTR-PyTorch_p")
 
+
 class BalloonConfig(Config):
     """Configuration for training on the toy  dataset.
     Derives from the base Config class and overrides some values.
     """
     # Give the configuration a recognizable name
-    NAME = "Lesion"
+    NAME = "Deep_Lesion"
     # We use a GPU with 12GB memory, which can fit two images.
     # Adjust down if you use a smaller GPU.
     IMAGES_PER_GPU = 1 #seems highest is 512 otherwise memory problems. 
@@ -58,46 +100,51 @@ class BalloonConfig(Config):
 #BATCH_SIZE = IMAGES_PER_GPU*GPU_COUNT
 #That means that:
 #STEPS_PER_EPOCH = NUMBER_OF_SAMPLES/(IMAGES_PER_GPU*GPU_COUNT)
-    VALIDATION_STEPS = 100/BATCH_SIZE 
+    VALIDATION_STEPS = 250/BATCH_SIZE 
     STEPS_PER_EPOCH = 1000/BATCH_SIZE 
     # Number of classes (including background)
-    
-    
-    ##############################################
-    NUM_CLASSES = 1 + 8  # Background + 8 classes (see below)
-    ######## NEED TO CHANGE IF YOU ADD UNKNOWNS BACK IN
-    
+    NUM_CLASSES = 1 + 8  # Background + 9 classes (see below)
     # Number of training steps per epoch
     # Skip detections with < 90% confidence
-    DETECTION_MIN_CONFIDENCE = 0.9
+    ######################## ADDED THIS , default was 800, 1024. But this was crashing the system. 
     IMAGE_RESIZE_MODE = "square"
-    IMAGE_MIN_DIM = 512
-    IMAGE_MAX_DIM = 512
-    RPN_ANCHOR_SCALES = (32, 64, 128, 256, 512)
-    TRAIN_ROIS_PER_IMAGE = 128
-    MAX_GT_INSTANCES = 3
-    DETECTION_MAX_INSTANCES = 3
-    DETECTION_MIN_CONFIDENCE = 0.93
+    IMAGE_MIN_DIM = image_size
+    IMAGE_MAX_DIM = image_size
+
+
+
+
+    # Skip detections with < 90% confidence
+
+    DETECTION_MAX_INSTANCES = 5
+    DETECTION_MIN_CONFIDENCE = 0.8
     DETECTION_NMS_THRESHOLD = 0.3
+
+
+class InferenceConfig(BalloonConfig):
+    # Set batch size to 1 since we'll be running inference on
+    # one image at a time. Batch size = GPU_COUNT * IMAGES_PER_GPU
+    GPU_COUNT = 1
+    IMAGES_PER_GPU = 1
+config = InferenceConfig()
+print(config)
+
+TEST_MODE = "inference"
+
+def get_ax(rows=1, cols=1, size=16):
+    """Return a Matplotlib Axes array to be used in
+    all visualizations in the notebook. Provide a
+    central point to control graph sizes.
     
-    LEARNING_RATE = 0.00001
-    LEARNING_MOMENTUM = 0.9
-    
+    Adjust the size attribute to control how big to render images
+    """
+    _, ax = plt.subplots(rows, cols, figsize=(size*cols, size*rows))
+    return ax
 
-    # Weight decay regularization
-    WEIGHT_DECAY = 0.0001
-
-    USE_MINI_MASK = False
-    ########################## make this false?
-    #USE_MINI_MASK = True
-    #MINI_MASK_SHAPE = (56, 56)  # (height, width) of the mini-mask
-    ##########################
-
-config = BalloonConfig()
 
 
 class Deep_Lesion_Dataset(utils_DL.Dataset):
-
+    
     def load_deep_lesion(self, dataset_dir, subset): #I don't think we need dataset directory.
         """Load a subset of the Balloon dataset.
         dataset_dir: Root directory of the dataset.
@@ -262,9 +309,15 @@ class Deep_Lesion_Dataset(utils_DL.Dataset):
             print(subset)
             print(int(image_cat))
             print(train_valid_test)
-            #### PROBLEM: Most of the "1" training images are "unknown" and therefore worthless. So we are using 1 and 2 for training. Save 3 for validation.
-            if subset == 'train' and (train_valid_test==1 or train_valid_test==2) and int(image_cat) >= 0: #Last checks that there are no unknowns.
+            #### PROBLEM: Most of the "1" training images are "unknown" and therefore worthless. There is 4831 in 3 and 4793 or so in 2. ZERO LABELS IMAGES IN 1. How lame is that?
+            if subset == 'train' and train_valid_test==3 and int(image_cat) >= 0: #Last checks that there are no unknowns.
                 print("Image Added for training")
+                print("Image Added for training")
+                print("Image Added for training")
+                print("Image Added for training")
+                print("Image Added for training")
+                
+
                 self.add_image(
                         ############ Replace balloon with CLASSES ABOVE, take from category. 
                         "Lesion",
@@ -273,11 +326,11 @@ class Deep_Lesion_Dataset(utils_DL.Dataset):
                         width=width, height=height,
                         polygons=polygons,
                         win=win,
-                        class_ids=class_ids)
-                
+                        class_ids=class_ids)               
 
             elif subset == 'val' and train_valid_test==2 and int(image_cat) >= 0: #Last checks that there are no unknowns.
                 print("Image added for validation")
+
                 self.add_image(
                         ############ Replace balloon with CLASSES ABOVE, take from category. 
                         "Lesion",
@@ -290,12 +343,10 @@ class Deep_Lesion_Dataset(utils_DL.Dataset):
                 
             else:
                 print("No image added...")
-                print("test image, should say 3 below")
-                print(train_valid_test) # 3 is saved for validation since we are using both training and validation (1&2) for training.
-
-
-
-        
+                print("Unknown, should say -1 below")
+                print(int(image_cat)) # 3 is saved for validation since we are using both training and validation (1&2) for training.
+                print("train_valid_test")
+                print(train_valid_test)
                 
     def load_image(self, image_id):
         """Load the specified image and return a [H,W,3] Numpy array.
@@ -312,29 +363,11 @@ class Deep_Lesion_Dataset(utils_DL.Dataset):
         im1[im1 > 1] = 1
         im1[im1 < 0] = 0
         im1 *= 255
-        print("im1 dtype and shape")
-        print(im1.dtype)
-        print(im1.shape)
         #image = im.astype(np.uint8)
         im2 = np.stack([im1,im1,im1],axis=2)
         im3=im2.astype(np.uint8)
-        print("inspect_deep_lesion")
-        print("image.dtype")
-        print(im3.dtype)
-        print("image.dtype")
-        print('load_image plt.imshow')
-        plt.imshow(im3)
         return im3
-    
-    def load_image_path(self, image_id):
-        path = self.image_info[image_id]['path']
-        return path
-    def load_image_win(self, image_id):
-        info = self.image_info[image_id]
-        win = info['win']
-        return win
-    
-    
+
     def load_mask(self, image_id):
         """Generate instance masks for an image.
         Returns:
@@ -362,7 +395,6 @@ class Deep_Lesion_Dataset(utils_DL.Dataset):
                         dtype=np.uint8)
         for i, p in enumerate(info["polygons"]):
             # Get indexes of pixels inside the polygon and set them to 1
-            print(info["polygons"])
             #rr, cc = skimage.draw.polygon(p['all_points_y'], p['all_points_x'])
             rr, cc = skimage.draw.polygon(p['all_points_x'],p['all_points_y'])
             mask[rr, cc, i] = 1
@@ -391,63 +423,110 @@ class Deep_Lesion_Dataset(utils_DL.Dataset):
         ############################ OLD CODE #######################################################
         
         return mask, class_ids#[mask.shape[-1]] #np.ones([mask.shape[-1]], dtype=np.int32)#class_ids.astype(np.int32)
-            
+
     def image_reference(self, image_id):
         """Return the path of the image."""
         info = self.image_info[image_id]
         
         #################### NEED TO SET THIS equal to something else. or jsut return all. 
         
-        #return info["path"]
+        return info["path"]
         
-        if info["source"] == "Lesion":
-            return info["path"]
-        else:
-            super(self.__class__, self).image_reference(image_id)
+        #if info["source"] == "balloon":
+        #    return info["path"]
+        #else:
+        #    super(self.__class__, self).image_reference(image_id)
 
          ################## Not sure about this... 
-dataset = Deep_Lesion_Dataset()
-dataset.load_deep_lesion("doesnt_matter_what_i_type_here", "train")
-dataset.prepare()
-print("Image Count: {}".format(len(dataset.image_ids)))
-print("Class Count: {}".format(dataset.num_classes))
-for i, info in enumerate(dataset.class_info):
-    print("{:3}. {:50}".format(i, info['name']))
-    
-# Load and display random samples
-image_ids = np.random.choice(dataset.image_ids, 4)
-for image_id in image_ids:
-    image = dataset.load_image(image_id)
-    mask, class_ids = dataset.load_mask(image_id)
-    visualize.display_top_masks(image, mask, class_ids, dataset.class_names)
 
-# Load random image and mask.
-image_id = random.choice(dataset.image_ids)
-image = dataset.load_image(image_id)
-mask, class_ids = dataset.load_mask(image_id)
+
+dataset_train = Deep_Lesion_Dataset()
+    
+############################## We need to separate the training and validation
+### There is a variable in the dict, which is training_val_testing
+### It's in image_info file, 
+# under annotations, image
+#annotations['images'][0]['Train_Val_Test']
+    
+    ### TRAIN = 1
+    ### VALIDATION = 2
+    ### TEST = 3
+    
+    ###### NEED TO EXRACT THREE DIFFERENT DATASETS based on this. 
+    ## look at how "train"/"valid" is fed in below
+    
+    
+dataset_train.load_deep_lesion('doesntmatter', "train")
+    
+dataset_train.prepare()
+
+    # Validation dataset
+dataset_val = Deep_Lesion_Dataset()
+    
+dataset_val.load_deep_lesion('doesntmatter', "val")
+    
+    
+    
+dataset_val.prepare()
+
+
+print("Training Images: {}\nClasses: {}".format(len(dataset_train.image_ids), dataset_train.class_names))
+
+print("Validations Images: {}\nClasses: {}".format(len(dataset_val.image_ids), dataset_val.class_names))
+
+#model = modellib.MaskRCNN(mode="inference", config=config,
+#                          model_dir=MODEL_DIR)
+DEVICE = "/gpu:0"
+with tf.device(DEVICE):
+    model = modellib.MaskRCNN(mode="inference", model_dir=MODEL_DIR,
+                              config=config) 
+
+   
+########################################################
+#model.load_weights(WEIGHT_DIR, by_name=True, exclude=[
+#    "mrcnn_class_logits", "mrcnn_bbox_fc",
+#   "mrcnn_bbox", "mrcnn_mask"]) 
+########################################################
+
+##################################################################################### results wont predict with this code
+weights_path = model.find_last()
+########## Load weights
+print("Loading weights ", weights_path)
+model.load_weights(weights_path, by_name=True)
+########################################################################################
+
+image_id = random.choice(dataset_val.image_ids)
+image, image_meta, gt_class_id, gt_bbox, gt_mask =\
+    modellib.load_image_gt(dataset_val, config, image_id, use_mini_mask=False)
+info = dataset_val.image_info[image_id]
+print("image ID: {}.{} ({}) {}".format(info["source"], info["id"], image_id, 
+                                       dataset_val.image_reference(image_id)))
+
+# Run object detection
+results = model.detect([image], verbose=1)
+
+# Display results
+ax = get_ax(1)
+r = results[0]
+visualize.display_instances(image, r['rois'], r['masks'], r['class_ids'], 
+                            dataset_val.class_names, r['scores'], ax=ax,
+                            title="Predictions")
+log("gt_class_id", gt_class_id)
+log("gt_bbox", gt_bbox)
+log("gt_mask", gt_mask)
+
+image = dataset_val.load_image(image_id)
+mask, class_ids = dataset_val.load_mask(image_id)
 # Compute Bounding box
 bbox = utils_DL.extract_bboxes(mask)
 
 # Display image and additional stats
-print("image_id ", image_id, dataset.image_reference(image_id))
+print("image_id ", image_id, dataset_val.image_reference(image_id))
 log("image", image)
 log("mask", mask)
 log("class_ids", class_ids)
 log("bbox", bbox)
 # Display image and instances
-visualize.display_instances(image, bbox, mask, class_ids, dataset.class_names)
-path = dataset.load_image_path(image_id)
-win = dataset.load_image_win(image_id)
-## Need to pull out path from somewhere above. 
-
-ima = cv2.imread(path, -1)
-ima = ima.astype(np.float32, copy=False)-32768
-ima1 = ima.astype(float)
-ima1 -= win[0]
-ima1 /= win[1] - win[0]
-ima1[ima1 > 1] = 1
-ima1[ima1 < 0] = 0
-ima1 *= 255
-ima2 = np.stack([ima1,ima1,ima1],axis=2)
-ima3=ima2.astype(np.uint8)
-plt.imshow(ima3)
+visualize.display_instances(image, bbox, mask, class_ids, dataset_val.class_names)
+#path = dataset_val.load_image_path(image_id)
+#win = dataset_val.load_image_win(image_id)

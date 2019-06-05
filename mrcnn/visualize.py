@@ -77,6 +77,10 @@ def apply_mask(image, mask, color, alpha=0.5):
                                   image[:, :, c] *
                                   (1 - alpha) + alpha * color[c] * 255,
                                   image[:, :, c])
+    print('apply_mask')
+    print('image')
+    print(image.shape)
+    print(image.dtype)
     return image
 
 
@@ -120,7 +124,10 @@ def display_instances(image, boxes, masks, class_ids, class_names,
     ax.axis('off')
     ax.set_title(title)
 
-    masked_image = image.astype(np.uint32).copy()
+    ######### WHY IS IT DISPLAYING AS 32??? #######################
+    #masked_image = image.astype(np.uint32).copy()
+    #########################################################
+    masked_image = image.astype(np.uint8).copy()
     for i in range(N):
         color = colors[i]
 

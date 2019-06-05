@@ -369,32 +369,74 @@ class Dataset(object):
         ##############******************ORIGINAL CODE*****************#######################
         
         
-        ####################### LOAD IMAGES AS 16bit 
         im = cv2.imread(self.image_info[image_id]['path'], -1)
+        im = im.astype(np.float32, copy=False)-32768 
+        
+        info = self.image_info[image_id]
+        win = info['win']
+        print('win')
+        print(win)
+        im1 = im.astype(float)
+        im1 -= win[0]
+        im1 /= win[1] - win[0]
+        im1[im1 > 1] = 1
+        im1[im1 < 0] = 0
+        im1 *= 255
         image = np.stack([im,im,im],axis=2) # make image rgb
-        
-        
+        print("utils_DL")
         
         return image
 
     def load_mask(self, image_id):
-        """Load instance masks for the given image.
-
-        Different datasets use different ways to store masks. Override this
-        method to load instance masks and return them in the form of am
-        array of binary masks of shape [height, width, instances].
-
+        """Generate instance masks for an image.
         Returns:
-            masks: A bool array of shape [height, width, instance count] with
-                a binary mask per instance.
-            class_ids: a 1D array of class IDs of the instance masks.
+        masks: A bool array of shape [height, width, instance count] with
+            one mask per instance.
+        class_ids: a 1D array of class IDs of the instance masks.
         """
-        # Override this function to load a mask from your dataset.
-        # Otherwise, it returns an empty mask.
-        logging.warning("You are using the default load_mask(), maybe you need to define your own one.")
-        mask = np.empty([0, 0, 0])
-        class_ids = np.empty([0], np.int32)
-        return mask, class_ids
+        # If not a balloon dataset image, delegate to parent class.
+        image_info = self.image_info[image_id]
+        
+        ######### This isn't working....
+        #if image_info["source"] != "Lesion":
+        #    return super(self.__class__, self).load_mask(image_id)
+        
+        class_ids = image_info['class_ids']
+        # Convert polygons to a bitmap mask of shape
+        # [height, width, instance_count]
+        info = self.image_info[image_id]
+        mask = np.zeros([info["height"], info["width"], len(info["polygons"])],
+                        dtype=np.uint8)
+        for i, p in enumerate(info["polygons"]):
+            # Get indexes of pixels inside the polygon and set them to 1
+            #rr, cc = skimage.draw.polygon(p['all_points_y'], p['all_points_x']) ##################### THIS RESULTS IN INCORRECT POSITION OF MASK IMAGES WHEN VIEWED ON INSPECT_DEEP_LESION.py
+            rr, cc = skimage.draw.polygon(p['all_points_x'],p['all_points_y'])
+            mask[rr, cc, i] = 1
+
+        # Return mask, and array of class IDs of each instance. Since we have
+        # one class ID only, we return an array of 1s
+        #class_ids=np.array([self.class_names.index(shapes[0])])
+        #print("info['class_ids']=", info['class_ids'])
+        class_ids = np.array(class_ids, dtype=np.int32)
+        
+        
+        ########################## OLD CODE #####################################################
+        #image_info = self.image_info[image_id]
+        #info = self.image_info[image_id]
+        #mask = np.zeros([info["height"], info["width"], len(info["polygons"])],
+        #                dtype=np.uint8)
+
+        #for i, p in enumerate(info["polygons"]):
+
+            #p['all_points_y'] = [int(i) for i in p['all_points_y']]
+            #p['all_points_x'] = [int(i) for i in p['all_points_x']]
+
+            #rr, cc = skimage.draw.polygon(p['all_points_y'], p['all_points_x'])
+            #mask[rr, cc, i] = 1
+        #return mask.astype(np.bool), np.ones([mask.shape[-1]], dtype=np.int32)
+        ############################ OLD CODE #######################################################
+        
+        return mask, class_ids#[mask.shape[-1]] #np.ones([mask.shape[-1]], dtype=np.int32)#class_ids.astype(np.int32)
 
 
 def resize_image(image, min_dim=None, max_dim=None, min_scale=None, mode="square"):

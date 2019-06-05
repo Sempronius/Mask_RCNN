@@ -1,6 +1,15 @@
-epoch = 12
-layers = 'all' #'all'  or 'heads' # PREVIOUSLY JUST DID HEADS
-patience1=2
+
+
+
+
+############## This information is hard coded below in training model, First 5 epoch heads , then 10 epochs of all training.
+#epoch = 5
+#layers = 'heads' #'all'  or 'heads' # PREVIOUSLY JUST DID HEADS
+######################
+
+
+
+patience1=3
 
 """
 Mask R-CNN
@@ -17,19 +26,19 @@ Usage: import the module (see Jupyter notebooks for examples), or run from
     
      
     # Train a new model starting from pre-trained COCO weights
-    python3 deep_lesion.py train --dataset=/path/to/balloon/dataset --weights=coco
+    python3 deep_lesion_train_all.py train --dataset=/path/to/balloon/dataset --weights=coco
 
     # Resume training a model that you had trained earlier
-    python3 deep_lesion.py train --dataset=/path/to/balloon/dataset --weights=last
+    python3 deep_lesion_train_all.py train --dataset=/path/to/balloon/dataset --weights=last
 
     # Train a new model starting from ImageNet weights
-    python3 deep_lesion.py train --dataset=/path/to/balloon/dataset --weights=imagenet
+    python3 deep_lesion_train_all.py train --dataset=/path/to/balloon/dataset --weights=imagenet
 
     # Apply color splash to an image
-    python3 deep_lesion.py splash --weights=/path/to/weights/file.h5 --image=<URL or path to file>
+    python3 ddeep_lesion_train_all.py splash --weights=/path/to/weights/file.h5 --image=<URL or path to file>
 
     # Apply color splash to video using the last weights you trained
-    python3 deep_lesion.py splash --weights=last --video=<URL or path to file>
+    python3 deep_lesion_train_all.py splash --weights=last --video=<URL or path to file>
 """
 from random import randint
 import os
@@ -45,7 +54,7 @@ ROOT_DIR = os.path.abspath("../../")
 # Import Mask RCNN
 sys.path.append(ROOT_DIR)  # To find local version of the library
 from mrcnn.config import Config
-from mrcnn import model as modellib, utils
+from mrcnn import model as modellib, utils_DL
 import utilities as util
 import cv2
 import pickle
@@ -88,31 +97,36 @@ class BalloonConfig(Config):
 #BATCH_SIZE = IMAGES_PER_GPU*GPU_COUNT
 #That means that:
 #STEPS_PER_EPOCH = NUMBER_OF_SAMPLES/(IMAGES_PER_GPU*GPU_COUNT)
-    VALIDATION_STEPS = 1000/BATCH_SIZE 
-    STEPS_PER_EPOCH = 5000/BATCH_SIZE 
+    VALIDATION_STEPS = 4700/BATCH_SIZE 
+    STEPS_PER_EPOCH = 4800/BATCH_SIZE 
     # Number of classes (including background)
-    NUM_CLASSES = 1 + 9  # Background + 9 classes (see below)
-    # Number of training steps per epoch
-    # Skip detections with < 90% confidence
-    DETECTION_MIN_CONFIDENCE = 0.9
-    IMAGE_RESIZE_MODE = "square"
-    IMAGE_MIN_DIM = 512
-    IMAGE_MAX_DIM = 512
-    RPN_ANCHOR_SCALES = (32, 64, 128, 256, 512)
-    TRAIN_ROIS_PER_IMAGE = 128
-    MAX_GT_INSTANCES = 3
-    DETECTION_MAX_INSTANCES = 3
-    DETECTION_MIN_CONFIDENCE = 0.93
-    DETECTION_NMS_THRESHOLD = 0.3
+    LOSS_WEIGHTS = {'mrcnn_mask_loss': 1.0, 'rpn_class_loss': 1.0, 'mrcnn_class_loss': 1.0, 'mrcnn_bbox_loss': 10.0, 'rpn_bbox_loss': 1.0}
     
-    LEARNING_RATE = 0.00001
-    LEARNING_MOMENTUM = 0.9
+    
+    ######################################### UNKNOWNS REMOVED, so only 8 classes. 
+    
+    
+    NUM_CLASSES = 1 + 8  # Background + 9 classes (see below)
+
+
+    #IMAGE_RESIZE_MODE = "square"
+    #IMAGE_MIN_DIM = 512
+    #IMAGE_MAX_DIM = 512
+    #RPN_ANCHOR_SCALES = (16, 32, 64, 128, 256)
+    #TRAIN_ROIS_PER_IMAGE = 256
+    #MAX_GT_INSTANCES = 3
+    #DETECTION_MAX_INSTANCES = 3
+    DETECTION_MIN_CONFIDENCE = 0.9
+    #DETECTION_NMS_THRESHOLD = 0.3
+    
+    #LEARNING_RATE = 0.00001
+    #LEARNING_MOMENTUM = 0.9
     
 
     # Weight decay regularization
-    WEIGHT_DECAY = 0.0001
+    #WEIGHT_DECAY = 0.0001
 
-    USE_MINI_MASK = False
+    #USE_MINI_MASK = False
     ########################## make this false?
     #USE_MINI_MASK = True
     #MINI_MASK_SHAPE = (56, 56)  # (height, width) of the mini-mask
@@ -122,8 +136,10 @@ class BalloonConfig(Config):
 ############################################################
 #  Dataset
 ############################################################
+validation_count=0
+training_count=0
 
-class Deep_Lesion_Dataset(utils.Dataset):
+class Deep_Lesion_Dataset(utils_DL.Dataset):
 
     def load_deep_lesion(self, dataset_dir, subset): #I don't think we need dataset directory.
         """Load a subset of the Balloon dataset.
@@ -131,15 +147,21 @@ class Deep_Lesion_Dataset(utils.Dataset):
         subset: Subset to load: train or val
         """
         # Add classes. We have only one class to add.
-        self.add_class("1", 1, "1") # or bone bone? or bone lesion?
-        self.add_class("2", 2, "2")
-        self.add_class("3", 3, "3")
-        self.add_class("4", 4, "4")
-        self.add_class("5", 5, "5")
-        self.add_class("6", 6, "6")
-        self.add_class("7", 7, "7") #Soft tissue: miscellaneous lesions in the body wall, muscle, skin, fat, limbs, head, and neck
-        self.add_class("8", 8, "8")
-        self.add_class("-1", 9, "-1") #Can i have a negative number here? This is straight from Deep Lesion format. 
+        self.add_class("Lesion", 1, "Bone") # "Bone"
+        self.add_class("Lesion", 2, "Abdomen_notLiver_notKidney") # "Abdomen_notLiver_notKidney"
+        self.add_class("Lesion", 3, "Mediastinum") # "Mediastinum"
+        self.add_class("Lesion", 4, "Liver") # "Liver"
+        self.add_class("Lesion", 5, "Lung") #"Lung"
+        self.add_class("Lesion", 6, "Kidney") #"Kidney"
+        self.add_class("Lesion", 7, "Soft_tissue") #Soft tissue: miscellaneous lesions in the body wall, muscle, skin, fat, limbs, head, and neck
+        self.add_class("Lesion", 8, "Pelvis") #"Pelvis"
+        
+        
+        
+        
+        
+        ##################### UNKNOWN CASES, WE WILL LEAVE THESE OUT. 
+        #self.add_class("-1", 9, "-1") #Can i have a negative number here? This is straight from Deep Lesion format. 
      
 #########################
         # Train or validation dataset?
@@ -170,8 +192,8 @@ class Deep_Lesion_Dataset(utils.Dataset):
         # We mostly care about the x and y coordinates of each region
         # Note: In VIA 2.0, regions was changed from a dict to a list.
         annotations = json.load(open(os.path.join(DEXTR_DIR, "data.json")))
-        
-        #annotations = list(annotations.values())  # don't need the dict keys
+        #annotations_seg = list(annotations.values())  # don't need the dict keys
+
         annotations_seg = annotations['annotations']
         
         #annotations_seg = segmentation[2]
@@ -180,8 +202,7 @@ class Deep_Lesion_Dataset(utils.Dataset):
         # annotations. Skip unannotated images.
         #annotations_seg = [a for a in annotations_seg if a['segmentation']]
 
-        ##################### When loading background, unlabled images, we need to put blank equivalent blank labels.  
-        polygons_blank = [{"all_points_x": [],"all_points_y": [],"name": 'polygon'}]
+
         
         b=0
         for a in annotations_seg:
@@ -189,6 +210,25 @@ class Deep_Lesion_Dataset(utils.Dataset):
             win = annotations_seg[b]['Windowing']
             image_id = annotations['images'][b]['id']
             image_cat = annotations['categories'][b]['category_id']
+
+            
+            
+            
+            ############
+            ############
+            ##########  Copy Food.py
+            polygons=[]
+            objects=[]
+            #for r in a['regions'].values():
+            for r in a['regions']:
+                polygons.append(r['shape_attributes'])
+            # print("polygons=", polygons)
+                objects.append(r['region_attributes'])
+            
+            class_ids = [int(n['Lesion']) for n in objects]
+                
+        
+            
             train_valid_test = annotations['images'][b]['Train_Val_Test']
             #### Must use index 'b' before here, because after this point it
             # will point to next image/index/
@@ -199,7 +239,6 @@ class Deep_Lesion_Dataset(utils.Dataset):
             # the outline of each object instance. These are stores in the
             # shape_attributes (see json format above)
             # The if condition is needed to support VIA versions 1.x and 2.x.
-            polygons = a['regions']
             ######## polygons 
             # needs to be a list of dictionaries for each lesion
             # so if there is one lesion.
@@ -208,7 +247,7 @@ class Deep_Lesion_Dataset(utils.Dataset):
             # all_point_x is list of variable size(depends on number of points)
             # same for y
             # name is str 'polygon'
-            
+
             
             
             # load_mask() needs the image size to convert polygons to masks.
@@ -225,12 +264,6 @@ class Deep_Lesion_Dataset(utils.Dataset):
             
             #***************************************************************
             ########################################################### use this to import all png files in this directory and load them as blanks. NaN for segmentation. 
-            directory_path = os.path.dirname(image_path)
-            image_path_additional = []
-            for text in files_bg:
-                if directory_path in text:
-                    
-                    image_path_additional.append(text)
             #############################################################
             #********************************************************************
             
@@ -269,134 +302,139 @@ class Deep_Lesion_Dataset(utils.Dataset):
             #### SEE IMAGE_INFO, INFO BELOW: I think it gets this from here
             #### SEE IMAGE_INFO, INFO BELOW: I think it gets this from here
  
-            if subset == 'train' and train_valid_test==1:
-                self.add_image(
-                        ############ Replace balloon with CLASSES ABOVE, take from category. 
-                        image_cat,
-                        ############### Replace balloon with CLASSES ABOVE,take from category.
-                        image_id=image_id,  # id is set above. 
-                        path=image_path,
-                        width=width, height=height,
-                        polygons=polygons)
-                for example_path in image_path_additional:
-                    dirn = os.path.basename(os.path.dirname(image_path_additional[0]))
-                    dirn1 = os.path.basename(os.path.dirname(os.path.dirname(example_path)))
-                    dirn2 = os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(example_path))))
-                    filen = os.path.basename(image_path_additional[0])
-                    image_id_new = dirn2 + dirn1 + dirn + filen
-                    self.add_image(
-                        ############ Replace balloon with CLASSES ABOVE, take from category. 
-                        image_cat, #same as above. same as key slice. 
-                        ############### Replace balloon with CLASSES ABOVE,take from category.
-                        image_id=image_id_new,  # id is set above. 
-                        path=example_path,
-                        width=width, height=height,
-                        polygons=polygons_blank)
+            print(subset)
+            print(int(image_cat))
+            print(train_valid_test)
+            #### PROBLEM: Most of the "1" training images are "unknown" and therefore worthless. So we are using 1 and 2 for training. Save 3 for validation.
+            if subset == 'train' and train_valid_test==2 and int(image_cat) >= 0: #Last checks that there are no unknowns.
+                print("Image Added for training")
+                print("Image Added for training")
+                print("Image Added for training")
+                print("Image Added for training")
+                print("Image Added for training")
                 
 
-            if subset == 'val' and train_valid_test==2:
                 self.add_image(
                         ############ Replace balloon with CLASSES ABOVE, take from category. 
-                        image_cat,
-                        ############### Replace balloon with CLASSES ABOVE,take from category.
+                        "Lesion",
                         image_id=image_id,  # id is set above. 
                         path=image_path,
                         width=width, height=height,
-                        polygons=polygons)
-                for example_path in image_path_additional:
-                    dirn = os.path.basename(os.path.dirname(image_path_additional[0]))
-                    dirn1 = os.path.basename(os.path.dirname(os.path.dirname(example_path)))
-                    dirn2 = os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(example_path))))
-                    filen = os.path.basename(image_path_additional[0])
-                    image_id_new = dirn2 + dirn1 + dirn + filen
-                    self.add_image(
+                        polygons=polygons,
+                        win=win,
+                        class_ids=class_ids)               
+
+            elif subset == 'val' and train_valid_test==3 and int(image_cat) >= 0: #Last checks that there are no unknowns.
+
+                self.add_image(
                         ############ Replace balloon with CLASSES ABOVE, take from category. 
-                        image_cat, #same as above. same as key slice. 
-                        ############### Replace balloon with CLASSES ABOVE,take from category.
-                        image_id=image_id_new,  # id is set above. 
-                        path=example_path,
+                        "Lesion",
+                        image_id=image_id,  # id is set above. 
+                        path=image_path,
                         width=width, height=height,
-                        polygons=polygons_blank)
+                        polygons=polygons,
+                        win=win,
+                        class_ids=class_ids)
                 
+            else:
+                print("No image added...")
+                print("Unknown, should say -1 below")
+                print(int(image_cat)) # 3 is saved for validation since we are using both training and validation (1&2) for training.
+                print("Or it should say 3 if training, or 2 and 1 if val")
+                print(train_valid_test)
                 
+    def load_image(self, image_id):
+        """Load the specified image and return a [H,W,3] Numpy array.
+        """
+        # Load image
+        #image = skimage.io.imread(self.image_info[image_id]['path'])
+        im = cv2.imread(self.image_info[image_id]['path'], -1)
+        im1 = im.astype(np.float32, copy=False)-32768
+        info = self.image_info[image_id]
+        win = info['win']
+
+        im1 -= win[0]
+        im1 /= win[1] - win[0]
+        im1[im1 > 1] = 1
+        im1[im1 < 0] = 0
+        im1 *= 255
+        #image = im.astype(np.uint8)
+        im2 = np.stack([im1,im1,im1],axis=2)
+        im3=im2.astype(np.uint8)
+        return im3
 
     def load_mask(self, image_id):
         """Generate instance masks for an image.
-       Returns:
+        Returns:
         masks: A bool array of shape [height, width, instance count] with
             one mask per instance.
         class_ids: a 1D array of class IDs of the instance masks.
         """
         # If not a balloon dataset image, delegate to parent class.
         image_info = self.image_info[image_id]
-        
-        
-        
-        ###########
-        ##########
-        ######## We want to evaluate every image. We could re-write this to include "1-10,-1" for categoies. 
-        #if image_info["source"] != "balloon":
-        #    return super(self.__class__, self).load_mask(image_id)
-##################
-        #############
 
+
+
+        ######### This isn't working....
+        if image_info["source"] != "Lesion":
+            return super(self.__class__, self).load_mask(image_id)
+        
+        
+        
+        
+        class_ids = image_info['class_ids']
         # Convert polygons to a bitmap mask of shape
         # [height, width, instance_count]
         info = self.image_info[image_id]
-        annotations = info["polygons"]
-        count = len(annotations[0]['all_points_x'])
-        if count == 0:
-            mask = np.zeros((info["height"], info["width"], 1), dtype=np.uint8)
-            #class_ids = np.zeros((1,), dtype=np.int32)            
-        else:
-            mask = np.zeros([info["height"], info["width"], len(info["polygons"])],
+        mask = np.zeros([info["height"], info["width"], len(info["polygons"])],
                         dtype=np.uint8)
-            for i, p in enumerate(info["polygons"]):
-                # Get indexes of pixels inside the polygon and set them to 1
-
-                ####
-                ### p needs to be a dictionary that contains three things: 
-                #polygon/name(str), all_points_x(list), all_points_y(list)
-                ### my all_points_x seems to be a list within a list? not sure. 
-                ###
-            
-                #### MY all_points are lists of floats. We need them to be lists of int
-                p['all_points_y'] = [int(i) for i in p['all_points_y']]
-                p['all_points_x'] = [int(i) for i in p['all_points_x']]
-                #############
-                ################
-                #####################
-            
-                rr, cc = skimage.draw.polygon(p['all_points_y'], p['all_points_x'])
-                mask[rr, cc, i] = 1
+        for i, p in enumerate(info["polygons"]):
+            # Get indexes of pixels inside the polygon and set them to 1
+            #rr, cc = skimage.draw.polygon(p['all_points_y'], p['all_points_x'])
+            rr, cc = skimage.draw.polygon(p['all_points_x'],p['all_points_y'])
+            mask[rr, cc, i] = 1
 
         # Return mask, and array of class IDs of each instance. Since we have
         # one class ID only, we return an array of 1s
-        return mask.astype(np.bool), np.ones([mask.shape[-1]], dtype=np.int32)
+        #class_ids=np.array([self.class_names.index(shapes[0])])
+        #print("info['class_ids']=", info['class_ids'])
+        class_ids = np.array(class_ids, dtype=np.int32)
+        
+        
+        ########################## OLD CODE #####################################################
+        #image_info = self.image_info[image_id]
+        #info = self.image_info[image_id]
+        #mask = np.zeros([info["height"], info["width"], len(info["polygons"])],
+        #                dtype=np.uint8)
+
+        #for i, p in enumerate(info["polygons"]):
+
+            #p['all_points_y'] = [int(i) for i in p['all_points_y']]
+            #p['all_points_x'] = [int(i) for i in p['all_points_x']]
+
+            #rr, cc = skimage.draw.polygon(p['all_points_y'], p['all_points_x'])
+            #mask[rr, cc, i] = 1
+        #return mask.astype(np.bool), np.ones([mask.shape[-1]], dtype=np.int32)
+        ############################ OLD CODE #######################################################
+        
+        return mask, class_ids#[mask.shape[-1]] #np.ones([mask.shape[-1]], dtype=np.int32)#class_ids.astype(np.int32)
 
     def image_reference(self, image_id):
         """Return the path of the image."""
         info = self.image_info[image_id]
-        
-        #################### NEED TO SET THIS equal to something else. or jsut return all. 
-        
-        return info["path"]
-        
-        #if info["source"] == "balloon":
-        #    return info["path"]
-        #else:
-        #    super(self.__class__, self).image_reference(image_id)
-
-         ################## Not sure about this... 
+        if info["source"] == "Lesion":
+            return info["path"]
+        else:
+            super(self.__class__, self).image_reference(image_id)
 
 #####################################################################
 augmentation = iaa.SomeOf((0, 1), [
-    iaa.Fliplr(0.5),
+    #iaa.Fliplr(0.5),
     iaa.Affine(
-        scale={"x": (0.8, 1.2), "y": (0.8, 1.2)},
-        translate_percent={"x": (-0.2, 0.2), "y": (-0.2, 0.2)},
-        rotate=(-25, 25),
-        shear=(-8, 8)
+        scale={"x": (0.9, 1.1), "y": (0.9, 1.1)},
+        translate_percent={"x": (-0.1, 0.1), "y": (-0.1, 0.1)},
+        rotate=(-5, 5),
+        shear=(-1, 1)
     ),
     iaa.Multiply((0.9, 1.1))
 ])
@@ -448,8 +486,17 @@ def train(model):
                 learning_rate=config.LEARNING_RATE,
                 #epochs=30,
                 #layers='heads')
-                epochs=epoch,
-                layers=layers,
+                epochs=5,
+                layers='heads',
+                custom_callbacks=callbacks,#############
+                augmentation=augmentation)######################
+    print("Training all layers, fine tuning")
+    model.train(dataset_train, dataset_val,
+                learning_rate=config.LEARNING_RATE / 10,
+                #epochs=30,
+                #layers='heads')
+                epochs=10,
+                layers='all',
                 custom_callbacks=callbacks,#############
                 augmentation=augmentation)######################
 
@@ -612,6 +659,8 @@ if __name__ == '__main__':
     if args.command == "train":
         model = modellib.MaskRCNN(mode="training", config=config,
                                   model_dir=args.logs)
+        
+        
     else:
         model = modellib.MaskRCNN(mode="inference", config=config,
                                   model_dir=args.logs)
@@ -621,7 +670,7 @@ if __name__ == '__main__':
         weights_path = COCO_WEIGHTS_PATH
         # Download weights file
         if not os.path.exists(weights_path):
-            utils.download_trained_weights(weights_path)
+            utils_DL.download_trained_weights(weights_path)
     elif args.weights.lower() == "last":
         # Find last trained weights
         weights_path = model.find_last()

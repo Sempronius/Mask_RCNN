@@ -14,8 +14,12 @@ MODEL_DIR = '/home/sempronius/deep_learning/Mask_RCNN/logs/'
 
 
 #################
-WEIGHT_DIR = '/home/sempronius/deep_learning/Mask_RCNN/logs/deep_lesion20190430T2209/mask_rcnn_deep_lesion_0100.h5'
+#WEIGHT_DIR = '/home/sempronius/deep_learning/Mask_RCNN/logs/deep_lesion20190508T0729/mask_rcnn_deep_lesion_0100.h5'
+WEIGHT_DIR = '/home/sempronius/deep_learning/Mask_RCNN/logs/deep_lesion20190604T1631/mask_rcnn_deep_lesion_0010.h5'
 ###############
+
+########################################## NEED TO CHAnge DEPENDING ON HOW YOU TRAINED
+image_size = 512
 
 from random import randint
 import os
@@ -26,6 +30,7 @@ import numpy as np
 import skimage.draw
 import numpy
 from PIL import Image, ImageDraw
+import cv2
 
 # Root directory of the project
 ROOT_DIR = os.path.abspath("../../")
@@ -68,24 +73,21 @@ class BalloonConfig(Config):
     VALIDATION_STEPS = 250/BATCH_SIZE 
     STEPS_PER_EPOCH = 1000/BATCH_SIZE 
     # Number of classes (including background)
-    NUM_CLASSES = 1 + 9  # Background + 9 classes (see below)
+    NUM_CLASSES = 1 + 8  # Background + 9 classes (see below)
     # Number of training steps per epoch
     # Skip detections with < 90% confidence
     ######################## ADDED THIS , default was 800, 1024. But this was crashing the system. 
     IMAGE_RESIZE_MODE = "square"
-    IMAGE_MIN_DIM = 512
-    IMAGE_MAX_DIM = 512
+    IMAGE_MIN_DIM = image_size
+    IMAGE_MAX_DIM = image_size
 
-    # Number of classes (including background)
-    NUM_CLASSES = 1 + 1  # Background + balloon
 
-    # Number of training steps per epoch
-    STEPS_PER_EPOCH = 100
+
 
     # Skip detections with < 90% confidence
 
-    DETECTION_MAX_INSTANCES = 10
-    DETECTION_MIN_CONFIDENCE = 0.5
+    DETECTION_MAX_INSTANCES = 5
+    DETECTION_MIN_CONFIDENCE = 0.8
     DETECTION_NMS_THRESHOLD = 0.3
 
 
@@ -102,24 +104,40 @@ model = modellib.MaskRCNN(mode="inference", config=config,
                           model_dir=MODEL_DIR)
     
 #model.load_weights(WEIGHT_DIR, by_name=True)
+
+
+
+
+###########################################################
 model.load_weights(WEIGHT_DIR, by_name=True, exclude=[
     "mrcnn_class_logits", "mrcnn_bbox_fc",
     "mrcnn_bbox", "mrcnn_mask"]) 
-
+##############################################################
    
     
 annotations = json.load(open(os.path.join(DEXTR_DIR, "data.json")))
 annotations_seg = annotations['annotations']
-
 ################ Create a loop to go through all the test images.
 #
 #for x in range(0,len(annotations['images'])):
 #    train_valid_test = annotations['images'][x]['Train_Val_Test']
 #    if train_valid_test == 3:
+
+#challenge = False
+#while challenge == False:
+#     
+#    b = randint(0,len(annotations_seg))
+#    image_info = annotations['images'][b]
+#    #train_valid_test = annotations['images'][b]['Train_Val_Test']
+#    train_valid_test = annotations['images'][b]['Train_Val_Test']
+#    area = annotations_seg[b]['area']
+#    print('Searching for test file with segmentation area 500 or more')
+#    if train_valid_test == 1 and area >= 250:
+#        challenge = True
         
 b = randint(0,len(annotations_seg))
 image_info = annotations['images'][b]
-#train_valid_test = annotations['images'][b]['Train_Val_Test']
+train_valid_test = annotations['images'][b]['Train_Val_Test']
 
 print("Running on:")
 print(image_info['File_name'])
@@ -136,22 +154,23 @@ win = list(map(int, win)) # turn the list of str, into a list of int
         
 ################### image format should be: unit8 rgb 
 #image = skimage.io.imread(image_path)
-image = util.load_im_with_default_windowing(win,image_path)
+############ default windowing:
+image_o = util.load_im_with_default_windowing(win,image_path)
+
+#im = cv2.imread(image_path, -1)
+#image = np.stack([im,im,im],axis=2)
 
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 
 
-r = model.detect([image], verbose=1)[0]
+r = model.detect([image_o], verbose=1)[0]
 
 ############################################################################### 
 ################# Need to deal with situation of MULTIPLE DETECTIONS. if r['masks'] = 2 or more. 
-
-
-
 mask = r['masks']
 print(r['masks'].shape)
-
+assert r['masks'].size >= 1
 
 ############################################## Allows multiple detections...
 if mask.shape[-1] > 0:
@@ -159,9 +178,6 @@ if mask.shape[-1] > 0:
 
     mask = (np.sum(mask, -1, keepdims=True) >= 1)
 #############################################
-
-
-#1864
 
 ########################## This crashes my computer:
 ########## CREATE a plot of 3 images, original, labeled, and mask. 
@@ -173,9 +189,9 @@ plt.set_cmap('gray')
 plt.ioff() ### TURN OFF INTERACTIVE MODE.   
 
 mask_stack = np.stack([mask[...,0]==0,mask[...,0]==0,mask[...,0]==0],axis=2)
-masked_img = np.where(mask_stack, image,[0,0,255])
+masked_img = np.where(mask_stack, image_o,[0,0,255])
 masked_img = masked_img.astype(np.uint8)
-ax[0].imshow(image) # original
+ax[0].imshow(image_o) # original
 ax[0].axis('off')
 
 
@@ -188,7 +204,7 @@ mask_original = numpy.array(img)
 
 mask_original_stack = np.stack([mask_original==0,mask_original==0,mask_original==0],axis=2)
 
-masked_original_img = np.where(mask_original_stack, image,[0,0,255])
+masked_original_img = np.where(mask_original_stack, image_o,[0,0,255])
 masked_original_img = masked_original_img.astype(np.uint8)
 ################################# WILL RUN INTO TROUBLE WITH MULTIPLE MASK (polygon being a list greater than one.)
 
@@ -206,34 +222,10 @@ ax[2].axis('off')
 
 plt.savefig(image_info['File_name'],bbox_inches='tight')    
 print('Saving File')
+print(r)
 
 
-def color_splash(image, mask):
-    """Apply color splash effect.
-    image: RGB image [height, width, 3]
-    mask: instance segmentation mask [height, width, instance count]
 
-    Returns result image.
-    """
-    mask1 = mask*255
-    red = mask*0
-    red = red.astype(np.uint8)
-    red = red[...,0]
-    mask1 = mask1[...,0]
-    mask2 = np.stack([mask1,red,red],axis=2)
-    imgplot = plt.imshow(mask2)
-    # Make a grayscale copy of the image. The grayscale copy still
-    # has 3 RGB channels, though.
-    gray = skimage.color.gray2rgb(skimage.color.rgb2gray(image)) * 255
-    # Copy color pixels from the original color image where mask is set
-    if mask.shape[-1] > 0:
-        # We're treating all instances as one, so collapse the mask into one layer
-        mask = (np.sum(mask, -1, keepdims=True) >= 1)
-        splash = np.where(mask, image, gray).astype(np.uint8)
-        
-    else:
-        splash = gray.astype(np.uint8)
-    return splash
 
 
 

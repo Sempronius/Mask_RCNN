@@ -1,6 +1,8 @@
-epoch = 12
-layers = 'all' #'all'  or 'heads' # PREVIOUSLY JUST DID HEADS
+epoch = 10
+layers = 'heads' #'all'  or 'heads' # PREVIOUSLY JUST DID HEADS
 patience1=2
+
+area_cut_off=250
 
 """
 Mask R-CNN
@@ -17,19 +19,19 @@ Usage: import the module (see Jupyter notebooks for examples), or run from
     
      
     # Train a new model starting from pre-trained COCO weights
-    python3 deep_lesion.py train --dataset=/path/to/balloon/dataset --weights=coco
+    python3 deep_lesion_train_key_no_aug.py train --dataset=/path/to/balloon/dataset --weights=coco
 
     # Resume training a model that you had trained earlier
-    python3 deep_lesion.py train --dataset=/path/to/balloon/dataset --weights=last
+    python3 deep_lesion_train_key_no_aug.py train --dataset=/path/to/balloon/dataset --weights=last
 
     # Train a new model starting from ImageNet weights
-    python3 deep_lesion.py train --dataset=/path/to/balloon/dataset --weights=imagenet
+    python3 deep_lesion_train_key_no_aug.py train --dataset=/path/to/balloon/dataset --weights=imagenet
 
     # Apply color splash to an image
-    python3 deep_lesion.py splash --weights=/path/to/weights/file.h5 --image=<URL or path to file>
+    python3 deep_lesion_train_key_no_aug.py splash --weights=/path/to/weights/file.h5 --image=<URL or path to file>
 
     # Apply color splash to video using the last weights you trained
-    python3 deep_lesion.py splash --weights=last --video=<URL or path to file>
+    python3 deep_lesion_train_key_no_aug.py splash --weights=last --video=<URL or path to file>
 """
 from random import randint
 import os
@@ -63,8 +65,7 @@ DEFAULT_LOGS_DIR = os.path.join(ROOT_DIR, "logs")
 BASE_DIR = os.path.abspath("../../../")
 
 DEXTR_DIR = os.path.join(BASE_DIR,"DEXTR-PyTorch_p")
-with open (os.path.join(DEXTR_DIR,'outfile_bg'), 'rb') as fp:
-    files_bg = pickle.load(fp)
+
 
 ############################################################
 #  Configurations
@@ -89,9 +90,9 @@ class BalloonConfig(Config):
 #That means that:
 #STEPS_PER_EPOCH = NUMBER_OF_SAMPLES/(IMAGES_PER_GPU*GPU_COUNT)
     VALIDATION_STEPS = 1000/BATCH_SIZE 
-    STEPS_PER_EPOCH = 5000/BATCH_SIZE 
+    STEPS_PER_EPOCH = 10000/BATCH_SIZE 
     # Number of classes (including background)
-    NUM_CLASSES = 1 + 9  # Background + 9 classes (see below)
+    NUM_CLASSES = 1 + 1  # Background + 9 classes (see below)
     # Number of training steps per epoch
     # Skip detections with < 90% confidence
     DETECTION_MIN_CONFIDENCE = 0.9
@@ -132,14 +133,14 @@ class Deep_Lesion_Dataset(utils.Dataset):
         """
         # Add classes. We have only one class to add.
         self.add_class("1", 1, "1") # or bone bone? or bone lesion?
-        self.add_class("2", 2, "2")
-        self.add_class("3", 3, "3")
-        self.add_class("4", 4, "4")
-        self.add_class("5", 5, "5")
-        self.add_class("6", 6, "6")
-        self.add_class("7", 7, "7") #Soft tissue: miscellaneous lesions in the body wall, muscle, skin, fat, limbs, head, and neck
-        self.add_class("8", 8, "8")
-        self.add_class("-1", 9, "-1") #Can i have a negative number here? This is straight from Deep Lesion format. 
+        #self.add_class("2", 2, "2")
+        #self.add_class("3", 3, "3")
+        #self.add_class("4", 4, "4")
+        #self.add_class("5", 5, "5")
+        #self.add_class("6", 6, "6")
+        #self.add_class("7", 7, "7") #Soft tissue: miscellaneous lesions in the body wall, muscle, skin, fat, limbs, head, and neck
+        #self.add_class("8", 8, "8")
+        #self.add_class("-1", 9, "-1") #Can i have a negative number here? This is straight from Deep Lesion format. 
      
 #########################
         # Train or validation dataset?
@@ -180,13 +181,13 @@ class Deep_Lesion_Dataset(utils.Dataset):
         # annotations. Skip unannotated images.
         #annotations_seg = [a for a in annotations_seg if a['segmentation']]
 
-        ##################### When loading background, unlabled images, we need to put blank equivalent blank labels.  
-        polygons_blank = [{"all_points_x": [],"all_points_y": [],"name": 'polygon'}]
+
         
         b=0
         for a in annotations_seg:
             image_info = annotations['images'][b]
             win = annotations_seg[b]['Windowing']
+            area = annotations_seg[b]['area']
             image_id = annotations['images'][b]['id']
             image_cat = annotations['categories'][b]['category_id']
             train_valid_test = annotations['images'][b]['Train_Val_Test']
@@ -225,12 +226,6 @@ class Deep_Lesion_Dataset(utils.Dataset):
             
             #***************************************************************
             ########################################################### use this to import all png files in this directory and load them as blanks. NaN for segmentation. 
-            directory_path = os.path.dirname(image_path)
-            image_path_additional = []
-            for text in files_bg:
-                if directory_path in text:
-                    
-                    image_path_additional.append(text)
             #############################################################
             #********************************************************************
             
@@ -269,56 +264,27 @@ class Deep_Lesion_Dataset(utils.Dataset):
             #### SEE IMAGE_INFO, INFO BELOW: I think it gets this from here
             #### SEE IMAGE_INFO, INFO BELOW: I think it gets this from here
  
-            if subset == 'train' and train_valid_test==1:
+            if subset == 'train' and train_valid_test==1 and area >= area_cut_off:
                 self.add_image(
                         ############ Replace balloon with CLASSES ABOVE, take from category. 
-                        image_cat,
+                        '1',
                         ############### Replace balloon with CLASSES ABOVE,take from category.
                         image_id=image_id,  # id is set above. 
                         path=image_path,
                         width=width, height=height,
                         polygons=polygons)
-                for example_path in image_path_additional:
-                    dirn = os.path.basename(os.path.dirname(image_path_additional[0]))
-                    dirn1 = os.path.basename(os.path.dirname(os.path.dirname(example_path)))
-                    dirn2 = os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(example_path))))
-                    filen = os.path.basename(image_path_additional[0])
-                    image_id_new = dirn2 + dirn1 + dirn + filen
-                    self.add_image(
-                        ############ Replace balloon with CLASSES ABOVE, take from category. 
-                        image_cat, #same as above. same as key slice. 
-                        ############### Replace balloon with CLASSES ABOVE,take from category.
-                        image_id=image_id_new,  # id is set above. 
-                        path=example_path,
-                        width=width, height=height,
-                        polygons=polygons_blank)
-                
 
-            if subset == 'val' and train_valid_test==2:
+            if subset == 'val' and train_valid_test==2 and area >= area_cut_off:
                 self.add_image(
                         ############ Replace balloon with CLASSES ABOVE, take from category. 
-                        image_cat,
+                        '1',
                         ############### Replace balloon with CLASSES ABOVE,take from category.
                         image_id=image_id,  # id is set above. 
                         path=image_path,
                         width=width, height=height,
                         polygons=polygons)
-                for example_path in image_path_additional:
-                    dirn = os.path.basename(os.path.dirname(image_path_additional[0]))
-                    dirn1 = os.path.basename(os.path.dirname(os.path.dirname(example_path)))
-                    dirn2 = os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(example_path))))
-                    filen = os.path.basename(image_path_additional[0])
-                    image_id_new = dirn2 + dirn1 + dirn + filen
-                    self.add_image(
-                        ############ Replace balloon with CLASSES ABOVE, take from category. 
-                        image_cat, #same as above. same as key slice. 
-                        ############### Replace balloon with CLASSES ABOVE,take from category.
-                        image_id=image_id_new,  # id is set above. 
-                        path=example_path,
-                        width=width, height=height,
-                        polygons=polygons_blank)
-                
-                
+               
+             
 
     def load_mask(self, image_id):
         """Generate instance masks for an image.
@@ -389,7 +355,7 @@ class Deep_Lesion_Dataset(utils.Dataset):
 
          ################## Not sure about this... 
 
-#####################################################################
+##################################################################### AUGMENTATION. Also need to modify train.model below.
 augmentation = iaa.SomeOf((0, 1), [
     iaa.Fliplr(0.5),
     iaa.Affine(
