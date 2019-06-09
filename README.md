@@ -1,4 +1,28 @@
-# Make sure you have tensorflow == 1.12 exactly, doesn't work with 1.13
+# Resdesigned to work with Deep Lesion segmented dataset. 
+
+######################## USE IMAGENET WEIGHTS !!!!! ##########################
+
+Deep Lesion DEXTR creates segmented datafile (DL_create_segmentation_dataset_one_lesion.py):
+data_including_unknown.json
+
+Train model which tries to differentiate lesion location: deep_lesion_train_all.py
+-problem is there is limited data here. 
+-training set is mainly unknown, and therefore useless.
+-have to use validation and testing sets to train
+
+EVALUATE MODEL:
+deep_lesion_eval_new.py
+Will load random examples, predictions followed by ground truth. 
+
+************************************************************
+Train model which tries to only look at Lesions as one category, doesn't matter where they are (deep_lesion_train_one_lesion.py)
+-just one category, "Lesion".
+
+EVALUATE MODEL:
+deep_lesion_eval_one.py
+Will load random examples, predictions followed by ground truth. 
+************************************************************
+
 
 # Mask R-CNN for Object Detection and Segmentation
 
