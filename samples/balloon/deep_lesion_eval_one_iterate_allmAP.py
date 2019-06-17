@@ -111,14 +111,22 @@ class BalloonConfig(Config):
     IMAGE_MIN_DIM = image_size
     IMAGE_MAX_DIM = image_size
 
-
-
-
-    # Skip detections with < 90% confidence
-
-    DETECTION_MAX_INSTANCES = 2
+    DETECTION_MAX_INSTANCES = 4
     DETECTION_MIN_CONFIDENCE = 0.9
     DETECTION_NMS_THRESHOLD = 0.3
+
+
+
+    #Total mAP = 0.00020699648305665244
+    #DETECTION_MAX_INSTANCES = 5
+    #DETECTION_MIN_CONFIDENCE = 0.8
+    #DETECTION_NMS_THRESHOLD = 0.3
+
+
+    # Total mAP = 0.00020699648105982217
+    #DETECTION_MAX_INSTANCES = 2
+    #DETECTION_MIN_CONFIDENCE = 0.9
+    #DETECTION_NMS_THRESHOLD = 0.3
 
 
 class InferenceConfig(BalloonConfig):
@@ -126,6 +134,11 @@ class InferenceConfig(BalloonConfig):
     # one image at a time. Batch size = GPU_COUNT * IMAGES_PER_GPU
     GPU_COUNT = 1
     IMAGES_PER_GPU = 1
+    DETECTION_MAX_INSTANCES = 4
+    DETECTION_MIN_CONFIDENCE = 0.9
+    DETECTION_NMS_THRESHOLD = 0.3
+    
+    
 config = InferenceConfig()
 print(config)
 
@@ -550,54 +563,40 @@ visualize.display_instances(image, bbox, mask, class_ids, dataset_val.class_name
 #path = dataset_val.load_image_path(image_id)
 #win = dataset_val.load_image_win(image_id)
 
-print("TEST IMAGE- never seen")
-image_id = random.choice(dataset_test.image_ids)
-image, image_meta, gt_class_id, gt_bbox, gt_mask =\
-    modellib.load_image_gt(dataset_test, config, image_id, use_mini_mask=False)
-info = dataset_test.image_info[image_id]
-print("image ID: {}.{} ({}) {}".format(info["source"], info["id"], image_id, 
-                                       dataset_test.image_reference(image_id)))
-
-# Run object detection
-results = model.detect([image], verbose=1)
-
-# Display results
-ax = get_ax(1)
-r = results[0]
-visualize.display_instances(image, r['rois'], r['masks'], r['class_ids'], 
-                            dataset_test.class_names, r['scores'], ax=ax,
-                            title="Predictions")
-log("gt_class_id", gt_class_id)
-log("gt_bbox", gt_bbox)
-log("gt_mask", gt_mask)
-
-image = dataset_test.load_image(image_id)
-mask, class_ids = dataset_test.load_mask(image_id)
-# Compute Bounding box
-bbox = utils_DL.extract_bboxes(mask)
-
-# Display image and additional stats
-print("image_id ", image_id, dataset_test.image_reference(image_id))
-log("image", image)
-log("mask", mask)
-log("class_ids", class_ids)
-log("bbox", bbox)
-# Display image and instances
-visualize.display_instances(image, bbox, mask, class_ids, dataset_test.class_names)
-#path = dataset_val.load_image_path(image_id)
-#win = dataset_val.load_image_win(image_id)
-mask_pred = r['masks']
-#mask_pred = mask_pred.astype(np.uint8)
-#mask_pred = mask_pred[:,:,0:1]
-utils_DL.compute_overlaps_masks(mask_pred,mask)
-
-print("Mean Average Precision")
-pred_box = r['rois']
-pred_class_id = r['class_ids']
-pred_score = r['scores']
-pred_mask = r['masks']
-mAP = utils_DL.compute_ap_range(gt_bbox, gt_class_id, gt_mask,
-                     pred_box, pred_class_id, pred_score, pred_mask,
-                     iou_thresholds=None, verbose=1)
-print(mAP)
-
+mAP_total = 0
+b = 0
+for image_id in dataset_test.image_ids:
+    b+=1
+    image, image_meta, gt_class_id, gt_bbox, gt_mask =\
+        modellib.load_image_gt(dataset_test, config, image_id, use_mini_mask=False)
+    info = dataset_test.image_info[image_id]
+    print("image ID: {}.{} ({}) {}".format(info["source"], info["id"], image_id, 
+          dataset_test.image_reference(image_id)))
+    # Run object detection
+    results = model.detect([image], verbose=1)
+    r = results[0]
+    image = dataset_test.load_image(image_id)
+    mask, class_ids = dataset_test.load_mask(image_id)
+    bbox = utils_DL.extract_bboxes(mask)
+    mask_pred = r['masks']
+    utils_DL.compute_overlaps_masks(mask_pred,mask)
+    
+    print("Mean Average Precision")
+    pred_box = r['rois']
+    pred_class_id = r['class_ids']
+    pred_score = r['scores']
+    pred_mask = r['masks']
+    mAP = utils_DL.compute_ap_range(gt_bbox, gt_class_id, gt_mask,
+                                    pred_box, pred_class_id, pred_score, pred_mask,
+                                     iou_thresholds=None, verbose=1)
+    #                                iou_thresholds=None, verbose=1)
+    print(mAP)
+    print("Total mAP")
+    #mAP_total = (mAP_total + mAP)/ b
+    mAP_total = mAP_total + mAP
+    print(mAP_total/b)
+    #print(mAP_total)
+    print('example number:')
+    print(b)
+    
+    

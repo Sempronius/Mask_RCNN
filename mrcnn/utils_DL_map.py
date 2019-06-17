@@ -413,55 +413,54 @@ class Dataset(object):
         return image
 
     def load_mask(self, image_id):
-        """Generate instance masks for an image.
+        """Load instance masks for the given image.
+        Different datasets use different ways to store masks. This
+        function converts the different mask format to one format
+        in the form of a bitmap [height, width, instances].
         Returns:
         masks: A bool array of shape [height, width, instance count] with
             one mask per instance.
         class_ids: a 1D array of class IDs of the instance masks.
         """
-        # If not a balloon dataset image, delegate to parent class.
+        # If not a COCO image, delegate to parent class.
         image_info = self.image_info[image_id]
-        
-        ######### This isn't working....
-        #if image_info["source"] != "Lesion":
-        #    return super(self.__class__, self).load_mask(image_id)
-        
-        class_ids = image_info['class_ids']
-        # Convert polygons to a bitmap mask of shape
-        # [height, width, instance_count]
-        info = self.image_info[image_id]
-        mask = np.zeros([info["height"], info["width"], len(info["polygons"])],
-                        dtype=np.uint8)
-        for i, p in enumerate(info["polygons"]):
-            # Get indexes of pixels inside the polygon and set them to 1
-            #rr, cc = skimage.draw.polygon(p['all_points_y'], p['all_points_x']) ##################### THIS RESULTS IN INCORRECT POSITION OF MASK IMAGES WHEN VIEWED ON INSPECT_DEEP_LESION.py
-            rr, cc = skimage.draw.polygon(p['all_points_x'],p['all_points_y'])
-            mask[rr, cc, i] = 1
+        if image_info["source"] != "coco":
+            return super(Dataset, self).load_mask(image_id)
 
-        # Return mask, and array of class IDs of each instance. Since we have
-        # one class ID only, we return an array of 1s
-        #class_ids=np.array([self.class_names.index(shapes[0])])
-        #print("info['class_ids']=", info['class_ids'])
-        class_ids = np.array(class_ids, dtype=np.int32)
-        
-        
-        ########################## OLD CODE #####################################################
-        #image_info = self.image_info[image_id]
-        #info = self.image_info[image_id]
-        #mask = np.zeros([info["height"], info["width"], len(info["polygons"])],
-        #                dtype=np.uint8)
+        instance_masks = []
+        class_ids = []
+        annotations = self.image_info[image_id]["annotations"]
+        # Build mask of shape [height, width, instance_count] and list
+        # of class IDs that correspond to each channel of the mask.
+        for annotation in annotations:
+            class_id = self.map_source_class_id(
+                "coco.{}".format(annotation['category_id']))
+            if class_id:
+                m = self.annToMask(annotation, image_info["height"],
+                                   image_info["width"])
+                # Some objects are so small that they're less than 1 pixel area
+                # and end up rounded out. Skip those objects.
+                if m.max() < 1:
+                    continue
+                # Is it a crowd? If so, use a negative class ID.
+                if annotation['iscrowd']:
+                    # Use negative class ID for crowds
+                    class_id *= -1
+                    # For crowd masks, annToMask() sometimes returns a mask
+                    # smaller than the given dimensions. If so, resize it.
+                    if m.shape[0] != image_info["height"] or m.shape[1] != image_info["width"]:
+                        m = np.ones([image_info["height"], image_info["width"]], dtype=bool)
+                instance_masks.append(m)
+                class_ids.append(class_id)
 
-        #for i, p in enumerate(info["polygons"]):
-
-            #p['all_points_y'] = [int(i) for i in p['all_points_y']]
-            #p['all_points_x'] = [int(i) for i in p['all_points_x']]
-
-            #rr, cc = skimage.draw.polygon(p['all_points_y'], p['all_points_x'])
-            #mask[rr, cc, i] = 1
-        #return mask.astype(np.bool), np.ones([mask.shape[-1]], dtype=np.int32)
-        ############################ OLD CODE #######################################################
-        
-        return mask, class_ids#[mask.shape[-1]] #np.ones([mask.shape[-1]], dtype=np.int32)#class_ids.astype(np.int32)
+        # Pack instance masks into an array
+        if class_ids:
+            mask = np.stack(instance_masks, axis=2).astype(np.bool)
+            class_ids = np.array(class_ids, dtype=np.int32)
+            return mask, class_ids
+        else:
+            # Call super class to return an empty mask
+            return super(Dataset, self).load_mask(image_id)
 
 
 def resize_image(image, min_dim=None, max_dim=None, min_scale=None, mode="square"):

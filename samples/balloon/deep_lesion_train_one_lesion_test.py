@@ -28,19 +28,19 @@ Usage: import the module (see Jupyter notebooks for examples), or run from
 
 
     # Train a new model starting from ImageNet weights
-    python3 deep_lesion_train_one_lesion.py train --dataset=/path/to/balloon/dataset --weights=imagenet
+    python3 deep_lesion_train_one_lesion_test.py train --dataset=/path/to/balloon/dataset --weights=imagenet
 
     # Train a new model starting from pre-trained COCO weights
-    python3 deep_lesion_train_one_lesion.py train --dataset=/path/to/balloon/dataset --weights=coco
+    python3 deep_lesion_train_one_lesion_test.py train --dataset=/path/to/balloon/dataset --weights=coco
 
     # Resume training a model that you had trained earlier
-    python3 deep_lesion_train_one_lesion.py train --dataset=/path/to/balloon/dataset --weights=last
+    python3 deep_lesion_train_one_lesion_test.py train --dataset=/path/to/balloon/dataset --weights=last
     
     # Apply color splash to an image
-    python3 deep_lesion_train_one_lesion.py splash --weights=/path/to/weights/file.h5 --image=<URL or path to file>
+    python3 ddeep_lesion_train_one_lesion_test.py splash --weights=/path/to/weights/file.h5 --image=<URL or path to file>
 
     # Apply color splash to video using the last weights you trained
-    python3 deep_lesion_train_one_lesion.py splash --weights=last --video=<URL or path to file>
+    python3 deep_lesion_train_one_lesion_test.py splash --weights=last --video=<URL or path to file>
 """
 from random import randint
 import os
@@ -60,6 +60,8 @@ from mrcnn import model as modellib, utils_DL
 import utilities as util
 import cv2
 import pickle
+import os, random
+
 
 
 
@@ -99,34 +101,26 @@ class BalloonConfig(Config):
 #BATCH_SIZE = IMAGES_PER_GPU*GPU_COUNT
 #That means that:
 #STEPS_PER_EPOCH = NUMBER_OF_SAMPLES/(IMAGES_PER_GPU*GPU_COUNT)
-    VALIDATION_STEPS = 4793/BATCH_SIZE 
-    STEPS_PER_EPOCH = 22495/BATCH_SIZE 
-    #VALIDATION_STEPS = 100/BATCH_SIZE 
-    #STEPS_PER_EPOCH = 1000/BATCH_SIZE 
+    VALIDATION_STEPS = 5/BATCH_SIZE 
+    STEPS_PER_EPOCH = 22/BATCH_SIZE 
+    #VALIDATION_STEPS = 9586/BATCH_SIZE 
+    #STEPS_PER_EPOCH = 44990/BATCH_SIZE 
     # Number of classes (including background)
-    LOSS_WEIGHTS = {'mrcnn_mask_loss': 1.0, 'rpn_class_loss': 1.0, 'mrcnn_class_loss': 1.0, 'mrcnn_bbox_loss': 1.0, 'rpn_bbox_loss': 10.0}
-
-######################## DESCRIPTION OF THESE DIFFERENT PARAMETERS}
-#rpn_class_loss : How well the Region Proposal Network separates background with objetcs
-#rpn_bbox_loss : How well the RPN localize objects
-#mrcnn_bbox_loss : How well the Mask RCNN localize objects
-#mrcnn_class_loss : How well the Mask RCNN recognize each class of object
-#mrcnn_mask_loss : How well the Mask RCNN segment objects
+    LOSS_WEIGHTS = {'mrcnn_mask_loss': 1.0, 'rpn_class_loss': 1.0, 'mrcnn_class_loss': 1.0, 'mrcnn_bbox_loss': 3.0, 'rpn_bbox_loss': 1.0}
     
     
-    ######################################### Only one class. 
+    ######################################### UNKNOWNS REMOVED, so only 8 classes. 
+    
+    
     NUM_CLASSES = 1 + 1  # Background + ONE CLASS
 
 
-    IMAGE_RESIZE_MODE = "square"
-    IMAGE_MIN_DIM = 512
-    IMAGE_MAX_DIM = 512
+    #IMAGE_RESIZE_MODE = "square"
+    #IMAGE_MIN_DIM = 512
+    #IMAGE_MAX_DIM = 512
     #RPN_ANCHOR_SCALES = (16, 32, 64, 128, 256)
-    RPN_ANCHOR_SCALES = (4, 16, 32, 64, 128)
-    RPN_TRAIN_ANCHORS_PER_IMAGE = 128
-    TRAIN_ROIS_PER_IMAGE = 256
     #TRAIN_ROIS_PER_IMAGE = 256
-    #MAX_GT_INSTANCES = 2
+    #MAX_GT_INSTANCES = 3
     #DETECTION_MAX_INSTANCES = 3
     DETECTION_MIN_CONFIDENCE = 0.9
     #DETECTION_NMS_THRESHOLD = 0.3
@@ -138,7 +132,7 @@ class BalloonConfig(Config):
     # Weight decay regularization
     #WEIGHT_DECAY = 0.0001
 
-    USE_MINI_MASK = False
+    #USE_MINI_MASK = False
     ########################## make this false?
     #USE_MINI_MASK = True
     #MINI_MASK_SHAPE = (56, 56)  # (height, width) of the mini-mask
@@ -180,7 +174,27 @@ class Deep_Lesion_Dataset(utils_DL.Dataset):
             image_path = os.path.join(DEXTR_DIR,image_info['File_path'])
             image = cv2.imread(image_path, -1) #This isn't for reading, it's just to get height and width, see next line. 
             height, width = image.shape[:2]
+######################################################### ADD RANDOM BACKGROUND IMAGE.
+
+            dir_name = os.path.dirname(image_path)
             
+            random_choice = random.choice(os.listdir(dir_name)) #change dir name to whatever
+            while random_choice == os.path.basename(image_path):
+                random_choice = random.choice(os.listdir(dir_name))
+                #if random choice is equal to the key image, it will pick again.
+            
+            #Random background image path
+            bg_path = os.path.join(dir_name,random_choice)
+             
+            #filename
+            os.path.basename(os.path.splitext(bg_path)[0])
+            #directory name
+            os.path.basename(os.path.dirname(bg_path)) 
+            
+            line = os.path.basename(os.path.dirname(bg_path)) + os.path.basename(os.path.splitext(bg_path)[0])
+            
+            bg_image_id =  line.translate({ord(i):None for i in '_'}) #get rid of the "_"
+                         
             if subset == 'train' and train_valid_test==1: #Last checks that there are no unknowns.
                 print("Image Added for training")             
                 self.add_image(
@@ -191,7 +205,17 @@ class Deep_Lesion_Dataset(utils_DL.Dataset):
                         width=width, height=height,
                         polygons=polygons,
                         win=win,
-                        class_ids=class_ids)               
+                        class_ids=class_ids)
+                ##### Add that random background image
+                self.add_image(
+                        ############ Replace balloon with CLASSES ABOVE, take from category. 
+                        "BG",
+                        image_id=bg_image_id,  # id is set above. 
+                        path=bg_path,
+                        width=width, height=height,
+                        polygons={'all_points_x':[],'all_points_y':[],'name':'polygon'}, #Not sure if this is the right way to do it. 
+                        win=win,#using same windowing as keyimage. 
+                        class_ids=[0])#it's just a background image, adding it as a zero. 
                 
             elif subset == 'val' and train_valid_test==2: #Last checks that there are no unknowns.
                 print("Image Added for validation")
@@ -204,6 +228,16 @@ class Deep_Lesion_Dataset(utils_DL.Dataset):
                         polygons=polygons,
                         win=win,
                         class_ids=class_ids)
+                
+                self.add_image(
+                        ############ Replace balloon with CLASSES ABOVE, take from category. 
+                        "BG",
+                        image_id=bg_image_id,  # id is set above. 
+                        path=bg_path,
+                        width=width, height=height,
+                        polygons={'all_points_x':[],'all_points_y':[],'name':'polygon'}, #Not sure if this is the right way to do it. 
+                        win=win,#using same windowing as keyimage. 
+                        class_ids=[0])#it's just a background image, adding it as a zero. 
                 
             else:
                 print("No image added...")
@@ -236,28 +270,30 @@ class Deep_Lesion_Dataset(utils_DL.Dataset):
         class_ids: a 1D array of class IDs of the instance masks.
         """
         # If not a balloon dataset image, delegate to parent class.
-        image_info = self.image_info[image_id]
-
-
-
-        ######### This isn't working....
-        if image_info["source"] != "Abnormality":
-            return super(self.__class__, self).load_mask(image_id)
+        info = self.image_info[image_id]
+        
+        #if info["source"] != "Abnormality":
+        #    return super(self.__class__, self).load_mask(image_id)
         
         
         
         
-        class_ids = image_info['class_ids']
+        class_ids = info['class_ids']
         # Convert polygons to a bitmap mask of shape
         # [height, width, instance_count]
         info = self.image_info[image_id]
-        mask = np.zeros([info["height"], info["width"], len(info["polygons"])],
+        mask = np.zeros([info["height"], info["width"], int(len(info["polygons"])/3)], #This is supposed to be a list of instances. So, when you look at one instance it is {'all_points_x': [], 'all_points_y': [], 'name': 'polygon'}, but len results in '3'. So we divide by three. That way each 'instance' is equal to one. not 3. 
                         dtype=np.uint8)
-        for i, p in enumerate(info["polygons"]):
+        ##########################################
+        ########################################## NEED TO SKIP CODE BELOW IF THERE IS NO MASK IMAGE (ie, all_points_x = [])
+        
+        if info["source"] == "Abnormality":
+            for i, p in enumerate(info["polygons"]):
             # Get indexes of pixels inside the polygon and set them to 1
             #rr, cc = skimage.draw.polygon(p['all_points_y'], p['all_points_x'])
-            rr, cc = skimage.draw.polygon(p['all_points_x'],p['all_points_y'])
-            mask[rr, cc, i] = 1
+                rr, cc = skimage.draw.polygon(p['all_points_x'],p['all_points_y'])
+                mask[rr, cc, i] = 1
+        ########################################## OTHERWISE IT SHOULD JUST BE A BLANK MASK...
 
         class_ids = np.array(class_ids, dtype=np.int32)
         return mask, class_ids#[mask.shape[-1]] #np.ones([mask.shape[-1]], dtype=np.int32)#class_ids.astype(np.int32)
@@ -346,8 +382,8 @@ def train(model):
                 learning_rate=config.LEARNING_RATE,
                 #epochs=30,
                 #layers='heads')
-                epochs=10,
-                layers='heads',
+                epochs=20,
+                layers='all',
                 custom_callbacks=callbacks,#############
                 augmentation=augmentation)######################
     print("finised training network")

@@ -23,6 +23,17 @@ deep_lesion_eval_one.py
 Will load random examples, predictions followed by ground truth. 
 ************************************************************
 
+***************************** 
+deep_lesion_eval_one_allmAP.py
+Error when running "NameError: name 'unicode' is not defined"
+This requires that you make some small modifications to coco.py in your environment:
+line 310 in coco.py:
+        if type(resFile) == str or type(resFile) == unicode:
+        needs to be changed to
+        if type(resFile) == str: #or type(resFile) == unicode:
+        
+
+
 
 # Mask R-CNN for Object Detection and Segmentation
 
