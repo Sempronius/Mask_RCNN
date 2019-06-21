@@ -117,7 +117,7 @@ class BalloonConfig(Config):
     # Skip detections with < 90% confidence
 
     DETECTION_MAX_INSTANCES = 2
-    DETECTION_MIN_CONFIDENCE = 0.9
+    DETECTION_MIN_CONFIDENCE = 0.5
     DETECTION_NMS_THRESHOLD = 0.3
 
 
@@ -392,9 +392,11 @@ class Deep_Lesion_Dataset(utils_DL.Dataset):
         image_info = self.image_info[image_id]
 
 
-
+        
         ######### This isn't working....
-        if image_info["source"] != "Lesion":
+        #if image_info["source"] != "Lesion":
+        #    return super(self.__class__, self).load_mask(image_id)
+        if image_info["source"] != "Abnormality":
             return super(self.__class__, self).load_mask(image_id)
         
         

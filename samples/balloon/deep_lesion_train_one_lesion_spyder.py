@@ -2,12 +2,7 @@
 
 
 
-############## This information is hard coded below in training model, First 5 epoch heads , then 10 epochs of all training.
-#epoch = 5
-#layers = 'heads' #'all'  or 'heads' # PREVIOUSLY JUST DID HEADS
-######################
-
-
+####################################################################### IF YOU WANT TO LOAD IMAGENET OR LAST WEIGHTS, Have to skip to end. below
 
 patience1=3
 
@@ -60,7 +55,7 @@ from mrcnn import model as modellib, utils_DL
 import utilities as util
 import cv2
 import pickle
-
+from pycocotools.coco import COCO
 
 
 # Path to trained weights file
@@ -74,12 +69,65 @@ DEFAULT_LOGS_DIR = os.path.join(ROOT_DIR, "logs")
 BASE_DIR = os.path.abspath("../../../")
 
 DEXTR_DIR = os.path.join(BASE_DIR,"DEXTR-PyTorch_p")
-with open (os.path.join(DEXTR_DIR,'outfile_bg'), 'rb') as fp:
-    files_bg = pickle.load(fp)
+#with open (os.path.join(DEXTR_DIR,'outfile_bg'), 'rb') as fp:
+#    files_bg = pickle.load(fp)
+
+
+json_file = "data_coco_format_one_lesion.json"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ############################################################
 #  Configurations
 ############################################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 class BalloonConfig(Config):
@@ -122,7 +170,7 @@ class BalloonConfig(Config):
     IMAGE_MIN_DIM = 512
     IMAGE_MAX_DIM = 512
     RPN_ANCHOR_SCALES = (16, 32, 64, 128, 256)
-    #RPN_ANCHOR_SCALES = (4, 16, 32, 64, 128)
+    #RPN_ANCHOR_SCALES = (4, 16, 32, 64, 128) ###################################### seems to really screw things up
     #RPN_TRAIN_ANCHORS_PER_IMAGE = 128
     #TRAIN_ROIS_PER_IMAGE = 256
     #TRAIN_ROIS_PER_IMAGE = 256
@@ -138,8 +186,9 @@ class BalloonConfig(Config):
     # Weight decay regularization
     #WEIGHT_DECAY = 0.0001
 
-    #USE_MINI_MASK = False
-    ########################## make this false?
+    ####
+    #USE_MINI_MASK = False ###################################### seems to really screw things up
+
     USE_MINI_MASK = True
     MINI_MASK_SHAPE = (56, 56)  # (height, width) of the mini-mask
     ##########################
@@ -158,56 +207,119 @@ class Deep_Lesion_Dataset(utils_DL.Dataset):
         """
         # Add classes. We have only one class to add.
         self.add_class("Abnormality", 1, "Lesion") # "Bone"
-        annotations = json.load(open(os.path.join(DEXTR_DIR, "data_including_unknown.json")))
-        annotations_seg = annotations['annotations']
-        b=0
-        for a in annotations_seg:
-            image_info = annotations['images'][b]
-            win = annotations_seg[b]['Windowing']
-            image_id = annotations['images'][b]['id']
+        #annotations = json.load(open(os.path.join(DEXTR_DIR, "data_including_unknown.json")))
+        #annotations_seg = annotations['annotations']
+        #b=0
+        #for a in annotations_seg:
+        #    image_info = annotations['images'][b]
+        #    win = annotations_seg[b]['Windowing']
+        #    image_id = annotations['images'][b]['id']
+        #    polygons=[]
+        #    objects=[]
+        #    #for r in a['regions'].values():
+        #    for r in a['regions']:
+        #        polygons.append(r['shape_attributes'])
+        #    # print("polygons=", polygons)
+        #        #objects.append(r['region_attributes'])
+        #        objects.append({"Abnormality":1}) #All images have labels in format {Lesion:int}, but we want to change them all to one type, "Lesion".
+        #    
+        #    class_ids = [int(n['Abnormality']) for n in objects]
+        #    train_valid_test = annotations['images'][b]['Train_Val_Test']
+        #    b=b+1
+        #    image_path = os.path.join(DEXTR_DIR,image_info['File_path'])
+        #    image = cv2.imread(image_path, -1) #This isn't for reading, it's just to get height and width, see next line. 
+        #    height, width = image.shape[:2]
+         
+        coco = COCO(os.path.join(DEXTR_DIR, json_file))
+        class_ids = sorted(coco.getCatIds())
+        # All images
+        image_ids = list(coco.imgs.keys())
+                # Add classes
+        for i in class_ids:
+            # USE THIS CODE When you want to train individual (-1,1,2,3,4,5,6,7,8). unknown, abdomen, lung, etc
+            #self.add_class("coco", i, coco.loadCats(i)[0]["name"])
+            # Here we are just manually making one category. Everything is a "Lesion". 
+            self.add_class("Abnormality", 1, "Lesion")
+        
+        for i in image_ids:
             polygons=[]
             objects=[]
-            #for r in a['regions'].values():
-            for r in a['regions']:
+            for r in coco.anns[i]['regions']:
                 polygons.append(r['shape_attributes'])
-            # print("polygons=", polygons)
-                #objects.append(r['region_attributes'])
-                objects.append({"Abnormality":1}) #All images have labels in format {Lesion:int}, but we want to change them all to one type, "Lesion".
+                objects.append(r['region_attributes'])
+            class_ids = [int(n['Lesion']) for n in objects]
             
-            class_ids = [int(n['Abnormality']) for n in objects]
-            train_valid_test = annotations['images'][b]['Train_Val_Test']
-            b=b+1
-            image_path = os.path.join(DEXTR_DIR,image_info['File_path'])
-            image = cv2.imread(image_path, -1) #This isn't for reading, it's just to get height and width, see next line. 
-            height, width = image.shape[:2]
-            
-            if subset == 'train' and train_valid_test==1: #Last checks that there are no unknowns.
-                print("Image Added for training")
-                print("polygons")
-                print(polygons)
-                print("class_ids")
-                print(class_ids)
-                self.add_image(
-                        ############ Replace balloon with CLASSES ABOVE, take from category. 
-                        "Abnormality",
-                        image_id=image_id,  # id is set above. 
-                        path=image_path,
-                        width=width, height=height,
-                        polygons=polygons,
-                        win=win,
-                        class_ids=class_ids)               
-                
-            elif subset == 'val' and train_valid_test==2: #Last checks that there are no unknowns.
-                print("Image Added for validation")
-                self.add_image(
-                        ############ Replace balloon with CLASSES ABOVE, take from category. 
-                        "Abnormality",
-                        image_id=image_id,  # id is set above. 
-                        path=image_path,
-                        width=width, height=height,
-                        polygons=polygons,
-                        win=win,
-                        class_ids=class_ids)
+            if subset == "val" and coco.imgs[i]['Train_Val_Test'] == 2:
+                            print('validation image added')
+                            
+                            self.add_image(
+                                    "Abnormality", image_id=i,
+                                    path=coco.imgs[i]['File_path'],
+                                    width=coco.imgs[i]["width"],
+                                    height=coco.imgs[i]["height"],
+                                    polygons=polygons,
+                                    
+                                    win=coco.anns[i]['Windowing'],
+                                    class_ids=class_ids
+                                    )
+            if subset == "test" and coco.imgs[i]['Train_Val_Test'] == 3:
+                            print('test image added')
+                            
+
+                            self.add_image(
+                                    "Abnormality", image_id=i,
+                                    path=coco.imgs[i]['File_path'],
+                                    width=coco.imgs[i]["width"],
+                                    height=coco.imgs[i]["height"],
+                                    polygons=polygons,
+                                    
+                                    win=coco.anns[i]['Windowing'],
+                                    class_ids=class_ids
+                                    )
+            if subset == "train" and coco.imgs[i]['Train_Val_Test'] == 1:
+
+                            print('training image added')
+
+                            self.add_image(
+                                    "Abnormality", image_id=i,
+                                    path=coco.imgs[i]['File_path'],
+                                    width=coco.imgs[i]["width"],
+                                    height=coco.imgs[i]["height"],
+                                    polygons=polygons,
+                                    
+                                    win=coco.anns[i]['Windowing'],
+                                    class_ids=class_ids
+                                    )          
+        
+        
+        
+        
+        
+        
+        
+            #if subset == 'train' and train_valid_test==1: #Last checks that there are no unknowns.
+            #    print("Image Added for training")             
+            #    self.add_image(
+            #            ############ Replace balloon with CLASSES ABOVE, take from category. 
+            #            "Abnormality",
+            #            image_id=image_id,  # id is set above. 
+            #            path=image_path,
+            #            width=width, height=height,
+            #            polygons=polygons,
+            #            win=win,
+            #            class_ids=class_ids)               
+            #    
+            #elif subset == 'val' and train_valid_test==2: #Last checks that there are no unknowns.
+            #    print("Image Added for validation")
+            #    self.add_image(
+            #            ############ Replace balloon with CLASSES ABOVE, take from category. 
+            #            "Abnormality",
+            #            image_id=image_id,  # id is set above. 
+            #            path=image_path,
+            #            width=width, height=height,
+            #            polygons=polygons,
+            #            win=win,
+            #            class_ids=class_ids)
                 
             else:
                 print("No image added...")
@@ -262,7 +374,7 @@ class Deep_Lesion_Dataset(utils_DL.Dataset):
             #rr, cc = skimage.draw.polygon(p['all_points_y'], p['all_points_x'])
             rr, cc = skimage.draw.polygon(p['all_points_x'],p['all_points_y'])
             mask[rr, cc, i] = 1
-
+            
         class_ids = np.array(class_ids, dtype=np.int32)
         return mask, class_ids#[mask.shape[-1]] #np.ones([mask.shape[-1]], dtype=np.int32)#class_ids.astype(np.int32)
 
@@ -310,7 +422,7 @@ def train(model):
     ## look at how "train"/"valid" is fed in below
     
     
-    dataset_train.load_deep_lesion(args.dataset, "train")
+    dataset_train.load_deep_lesion("blah", "train")
     
     
     dataset_train.prepare()
@@ -318,7 +430,7 @@ def train(model):
     # Validation dataset
     dataset_val = Deep_Lesion_Dataset()
     
-    dataset_val.load_deep_lesion(args.dataset, "val")
+    dataset_val.load_deep_lesion("blah", "val")
     
     
     
@@ -464,98 +576,83 @@ def detect_and_color_splash(model, image_path=None, video_path=None):
 #  Training
 ############################################################
 
-if __name__ == '__main__':
-    import argparse
 
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(
-        description='Train Mask R-CNN to detect balloons.')
-    parser.add_argument("command",
-                        metavar="<command>",
-                        help="'train' or 'splash'")
-    parser.add_argument('--dataset', required=False,
-                        metavar="/path/to/balloon/dataset/",
-                        help='Directory of the Balloon dataset')
-    parser.add_argument('--weights', required=True,
-                        metavar="/path/to/weights.h5",
-                        help="Path to weights .h5 file or 'coco'")
-    parser.add_argument('--logs', required=False,
-                        default=DEFAULT_LOGS_DIR,
-                        metavar="/path/to/logs/",
-                        help='Logs and checkpoints directory (default=logs/)')
-    parser.add_argument('--image', required=False,
-                        metavar="path or URL to image",
-                        help='Image to apply the color splash effect on')
-    parser.add_argument('--video', required=False,
-                        metavar="path or URL to video",
-                        help='Video to apply the color splash effect on')
-    args = parser.parse_args()
 
-    # Validate arguments
-    if args.command == "train":
-        assert args.dataset, "Argument --dataset is required for training"
-    elif args.command == "splash":
-        assert args.image or args.video,\
-               "Provide --image or --video to apply color splash"
 
-    print("Weights: ", args.weights)
-    print("Dataset: ", args.dataset)
-    print("Logs: ", args.logs)
+dataset_train = Deep_Lesion_Dataset()
 
-    # Configurations
-    if args.command == "train":
-        config = BalloonConfig()
-    else:
-        class InferenceConfig(BalloonConfig):
-            # Set batch size to 1 since we'll be running inference on
-            # one image at a time. Batch size = GPU_COUNT * IMAGES_PER_GPU
-            GPU_COUNT = 1
-            IMAGES_PER_GPU = 1
-        config = InferenceConfig()
-    config.display()
+    
+dataset_train.load_deep_lesion("blah", "train")
+    
+dataset_train.prepare()
 
-    # Create model
-    if args.command == "train":
-        model = modellib.MaskRCNN(mode="training", config=config,
-                                  model_dir=args.logs)
-        
-        
-    else:
-        model = modellib.MaskRCNN(mode="inference", config=config,
-                                  model_dir=args.logs)
+# Validation dataset
+dataset_val = Deep_Lesion_Dataset()
+    
+dataset_val.load_deep_lesion("blah", "val")
+    
+    
+    
+dataset_val.prepare()
+augmentation = iaa.SomeOf((0, 1), [
+iaa.Fliplr(0.5),
+iaa.Affine(
+    scale={"x": (0.7, 1.3), "y": (0.7, 1.3)},
+    translate_percent={"x": (-0.2, 0.2), "y": (-0.2, 0.2)},
+    rotate=(-25, 25),
+    shear=(-2, 2)
+    ),
+    iaa.Multiply((0.7, 1.3))
+    ])
+    ########################################################################################
 
-    # Select weights file to load
-    if args.weights.lower() == "coco":
-        weights_path = COCO_WEIGHTS_PATH
-        # Download weights file
-        if not os.path.exists(weights_path):
-            utils_DL.download_trained_weights(weights_path)
-    elif args.weights.lower() == "last":
-        # Find last trained weights
-        weights_path = model.find_last()
-    elif args.weights.lower() == "imagenet":
-        # Start from ImageNet trained weights
-        weights_path = model.get_imagenet_weights()
-    else:
-        weights_path = args.weights
+from keras.callbacks import ReduceLROnPlateau
+reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.3, patience=patience1, verbose=1, mode='min', cooldown=0, min_lr=0)
+callbacks=[reduce_lr] 
 
-    # Load weights
-    print("Loading weights ", weights_path)
-    if args.weights.lower() == "coco":
-        # Exclude the last layers because they require a matching
-        # number of classes
-        model.load_weights(weights_path, by_name=True, exclude=[
-            "mrcnn_class_logits", "mrcnn_bbox_fc",
-            "mrcnn_bbox", "mrcnn_mask"])
-    else:
-        model.load_weights(weights_path, by_name=True)
+print("Training Images: {}\nClasses: {}".format(len(dataset_train.image_ids), dataset_train.class_names))
+print("Validations Images: {}\nClasses: {}".format(len(dataset_val.image_ids), dataset_val.class_names))
 
-    # Train or evaluate
-    if args.command == "train":
-        train(model)
-    elif args.command == "splash":
-        detect_and_color_splash(model, image_path=args.image,
-                                video_path=args.video)
-    else:
-        print("'{}' is not recognized. "
-              "Use 'train' or 'splash'".format(args.command))
+
+config = BalloonConfig()
+
+print("Training network heads")
+
+model = modellib.MaskRCNN(mode="training", config=config,
+                          model_dir=DEFAULT_LOGS_DIR)
+
+############################ FOR FIRST TIME RUNS, LOAD IMAGENET WEIGHTS **************************************
+weights_path = model.get_imagenet_weights()
+########################## LOAD LAST WEIGHTS:
+#weights_path = model.find_last()
+######################################**********************************************************************
+
+
+
+
+print("Loading weights")
+model.load_weights(weights_path, by_name=True)
+
+print("Training network heads")
+model.train(dataset_train, dataset_val,
+                learning_rate=config.LEARNING_RATE,
+                epochs=40, #
+                layers='heads', #heads #all #4+
+                custom_callbacks=callbacks,
+                augmentation=augmentation)
+print("Training network 4+ layers")
+model.train(dataset_train, dataset_val,
+                learning_rate=config.LEARNING_RATE,
+                epochs=120, # MUST BE HIGHER THAN THE EPOCH ABOVE. these are a continuation.
+                layers='4+', #heads #all #4+
+                custom_callbacks=callbacks,#############
+                augmentation=augmentation)######################
+print("Training network all layers")
+model.train(dataset_train, dataset_val,
+                learning_rate=config.LEARNING_RATE/10,
+                epochs=160, # MUST BE HIGHER THAN THE EPOCH ABOVE. these are a continuation.
+                layers='all', #heads #all #4+
+                custom_callbacks=callbacks,
+                augmentation=augmentation)
+    
+print("finished training network")

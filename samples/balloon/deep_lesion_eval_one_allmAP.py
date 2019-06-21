@@ -4,6 +4,9 @@
 Created on Tue Jun  4 18:32:13 2019
 
 @author: sempronius
+Train with last  weights
+LOOK UP:
+    http://cocodataset.org/#detection-eval
 """
 
 json_file = "data_coco_format_one_lesion.json"
@@ -46,8 +49,8 @@ MODEL_DIR = '/home/sempronius/deep_learning/Mask_RCNN/logs/'
 
 
 #################
-#WEIGHT_DIR = '/home/sempronius/deep_learning/Mask_RCNN/logs/deep_lesion20190508T0729/mask_rcnn_deep_lesion_0100.h5'
-WEIGHT_DIR = '/home/sempronius/deep_learning/Mask_RCNN/logs/deep_lesion20190605T0954/mask_rcnn_deep_lesion_0020.h5'
+#WEIGHT_DIR = '/home/sempronius/deep_learning/Mask_RCNN/logs/deep_lesion20190617T0030_trained100/mask_rcnn_deep_lesion_0100.h5'
+WEIGHT_DIR = '/home/sempronius/deep_learning/Mask_RCNN/logs/deep_lesion20190606T0805_good/mask_rcnn_deep_lesion_0020.h5'
 ###############
 
 ########################################## NEED TO CHAnge DEPENDING ON HOW YOU TRAINED
@@ -122,9 +125,8 @@ class BalloonConfig(Config):
 
 
     # Skip detections with < 90% confidence
-
-    DETECTION_MAX_INSTANCES = 15
-    DETECTION_MIN_CONFIDENCE = 0.97
+    DETECTION_MAX_INSTANCES = 5
+    DETECTION_MIN_CONFIDENCE = 0.8
     DETECTION_NMS_THRESHOLD = 0.3
 
 
@@ -510,7 +512,7 @@ print("Training Images: {}\nClasses: {}".format(len(dataset_train.image_ids), da
 
 print("Validations Images: {}\nClasses: {}".format(len(dataset_val.image_ids), dataset_val.class_names))
 
-print("Test Images: {}\nClasses: {}".format(len(dataset_val.image_ids), dataset_test.class_names))
+print("Test Images: {}\nClasses: {}".format(len(dataset_test.image_ids), dataset_test.class_names))
 
 #model = modellib.MaskRCNN(mode="inference", config=config,
 #                          model_dir=MODEL_DIR)
@@ -526,12 +528,14 @@ with tf.device(DEVICE):
 #   "mrcnn_bbox", "mrcnn_mask"]) 
 ########################################################
 
-##################################################################################### results wont predict with this code
+##################################################################################### LOAD LAST WEIGHTs
 weights_path = model.find_last()
 ########## Load weights
+#print("Loading weights ", WEIGHT_DIR)
+#model.load_weights(WEIGHT_DIR, by_name=True)
+########################################################################################
 print("Loading weights ", weights_path)
 model.load_weights(weights_path, by_name=True)
-########################################################################################
 
 def encodeMask(M):
         """
@@ -577,6 +581,9 @@ def build_coco_results(dataset, image_ids, rois, class_ids, scores, masks):
             bbox = np.around(rois[i], 1)
             mask = masks[:, :, i]
             contours = measure.find_contours(mask, 0.5)
+            #if contours == []:
+            #    print('mask')
+            #    print(mask)
 
             if len(contours) >= 2:
                 def PolyArea(x,y): #calculate area given series of x.y coordinates.
@@ -608,13 +615,14 @@ def build_coco_results(dataset, image_ids, rois, class_ids, scores, masks):
                 contours = [contours[number]] #assist conoutrs to whatever contour had the highest area.
             
             # save segmentation as polygon
-
+            #segmentation = [] ## Added this because there was a rare instance when contour was empty and the following lines that included segmentation threw an error. 
             for contour in contours:
                 contour = np.flip(contour, axis=1)
                 segmentation = contour.ravel().tolist()
                  #save segmentation data as polygon 
             
             #Round to eliminate floats
+
             segmentation = [round(x) for x in segmentation]
             
             result = {
@@ -701,6 +709,7 @@ def evaluate_coco(model, dataset, coco, eval_type="bbox", limit=0, image_ids=Non
     # Load results. This modifies results with additional attributes.
     #print(results)
     #coco_results = loadRes(results)
+
     coco_results = coco.loadRes(results)
 
     # Evaluate
@@ -718,13 +727,16 @@ def evaluate_coco(model, dataset, coco, eval_type="bbox", limit=0, image_ids=Non
 coco = COCO(os.path.join(DEXTR_DIR, json_file))
 
 ## HOW MANY FILES DO YOU WANT TO ANALZYE?
-limit=None
+#limit=None
 
-print("Running bbox COCO evaluation on {} images.".format(limit))
+
+            
+
+print("Running bbox COCO evaluation on {} images.".format(len(dataset_test.image_ids)))
 #evaluate_coco(model, dataset_val, coco, "bbox", limit=int(limit))
 evaluate_coco(model, dataset_test, coco, "bbox", limit=None)
 
-print("Running segmentation COCO evaluation on {} images.".format(limit))
+print("Running segmentation COCO evaluation on {} images.".format(len(dataset_test.image_ids)))
 #evaluate_coco(model, dataset_val, coco, "segm", limit=int(limit))
 evaluate_coco(model, dataset_test, coco, "segm", limit=None)
 
